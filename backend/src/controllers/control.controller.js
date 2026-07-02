@@ -1,4 +1,6 @@
 const pool = require('../config/database');
+const fs = require('fs');
+
 
 const getContextoPorQr = async (req, res) => {
     try {
@@ -110,6 +112,16 @@ const crearRegistroControl = async (req, res) => {
     const connection = await pool.getConnection();
 
     try {
+        console.log('==========================');
+        console.log('REQ.FILE:', req.file);
+        console.log('REQ.BODY:', req.body);
+        console.log('==========================');
+        let body = req.body;
+
+        if (body.payload) {
+            body = JSON.parse(body.payload);
+        }
+
         const {
             usuarioId,
             procesoId,
@@ -125,9 +137,13 @@ const crearRegistroControl = async (req, res) => {
             turno,
             resultadoVisual,
             observacion,
+            requiereEnsayoLaboratorio,
+            requiereMerma,
+            tipoMerma,
+            cantidadMerma,
             fallasVisuales,
             ensayosLaboratorio,
-        } = req.body;
+        } = body;
 
         if (!usuarioId || !procesoId || !maquinaId || !turno || !resultadoVisual) {
             return res.status(400).json({
@@ -176,11 +192,15 @@ const crearRegistroControl = async (req, res) => {
               turno,
               estado_id,
               observacion,
+              requiere_ensayo_laboratorio,
+              requiere_merma,
+              tipo_merma,
+              cantidad_merma,
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
-        `,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
+            `,
             [
                 usuarioId,
                 procesoId,
@@ -196,10 +216,40 @@ const crearRegistroControl = async (req, res) => {
                 turno,
                 estadoId,
                 observacion || null,
+                requiereEnsayoLaboratorio ? 1 : 0,
+                requiereMerma ? 1 : 0,
+                tipoMerma || null,
+                cantidadMerma || null,
             ]
         );
 
         const registroId = registroResult.insertId;
+        if (req.file) {
+            const rutaRelativa = `/uploads/control/${req.file.filename}`;
+
+            await connection.query(
+                `
+                INSERT INTO registro_adjuntos
+                (
+                  registro_id,
+                  nombre_original,
+                  nombre_archivo,
+                  ruta_archivo,
+                  mime_type,
+                  tamano_bytes
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                `,
+                [
+                    registroId,
+                    req.file.originalname,
+                    req.file.filename,
+                    rutaRelativa,
+                    req.file.mimetype,
+                    req.file.size,
+                ]
+            );
+        }
 
         if (Array.isArray(fallasVisuales) && fallasVisuales.length > 0) {
             for (const falla of fallasVisuales) {
@@ -262,8 +312,16 @@ const crearRegistroControl = async (req, res) => {
     } catch (error) {
         await connection.rollback();
 
-        console.error('Error crear registro control:', error.message);
+        if (req.file && req.file.path) {
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch (_) { }
+        }
 
+        console.error('==========================');
+        console.error('ERROR COMPLETO');
+        console.error(error);
+        console.error('==========================');
         res.status(500).json({
             ok: false,
             message: 'Error al guardar control',

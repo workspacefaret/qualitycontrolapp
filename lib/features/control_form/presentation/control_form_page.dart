@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/api/control_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
@@ -27,6 +30,10 @@ class _ControlFormPageState extends State<ControlFormPage> {
   final TextEditingController _npController = TextEditingController();
   final TextEditingController _observationController = TextEditingController();
 
+  final ImagePicker _imagePicker = ImagePicker();
+
+  File? _selectedAttachment;
+  String? _selectedAttachmentName;
   final Set<String> _selectedFailures = {};
   bool _visualValidatedWithoutFailures = false;
   String? _selectedVisualControlResult;
@@ -35,9 +42,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
   String? _productDescription;
 
   final List<String> _visualControlResults = [
-    'Cumple',
-    'No Cumple',
-    'No Aplica',
+    'Conforme',
+    'No Conforme',
   ];
 
   @override
@@ -90,6 +96,42 @@ class _ControlFormPageState extends State<ControlFormPage> {
     });
   }
 
+  Future<void> _takePhoto() async {
+    final XFile? photo = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 75,
+    );
+
+    if (photo == null) return;
+
+    setState(() {
+      _selectedAttachment = File(photo.path);
+      _selectedAttachmentName = photo.name;
+    });
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+    );
+
+    if (result == null || result.files.single.path == null) return;
+
+    setState(() {
+      _selectedAttachment = File(result.files.single.path!);
+      _selectedAttachmentName = result.files.single.name;
+    });
+  }
+
+  void _removeAttachment() {
+    setState(() {
+      _selectedAttachment = null;
+      _selectedAttachmentName = null;
+    });
+  }
+
   Future<void> _goToMeasurements() async {
     if (_npController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,28 +140,34 @@ class _ControlFormPageState extends State<ControlFormPage> {
       return;
     }
 
-    if (!_visualValidatedWithoutFailures && _selectedFailures.isEmpty) {
+    if (_selectedVisualControlResult == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe validar sin fallas o marcar una falla'),
-        ),
+        const SnackBar(content: Text('Debe seleccionar resultado visual')),
       );
       return;
     }
 
-    if (widget.controlContext.operatorArea == 'PRODUCCION') {
-      if (_selectedVisualControlResult == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Debe seleccionar resultado visual')),
-        );
-        return;
-      }
-      if (widget.controlContext.processId == 1 && _selectedTipoOndaId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Debe seleccionar tipo de onda')),
-        );
-        return;
-      }
+    if (widget.controlContext.processId == 1 &&
+        widget.controlContext.operatorArea == 'PRODUCCION' &&
+        _selectedTipoOndaId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar tipo de onda')),
+      );
+      return;
+    }
+
+    if (_selectedVisualControlResult == 'No Conforme' &&
+        _selectedFailures.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar al menos un defecto')),
+      );
+      return;
+    }
+
+    if (_selectedVisualControlResult == 'Conforme') {
+      _selectedFailures.clear();
+      _visualValidatedWithoutFailures = true;
+
       final payload = {
         'usuarioId': widget.controlContext.userId,
         'procesoId': widget.controlContext.processId,
@@ -133,7 +181,90 @@ class _ControlFormPageState extends State<ControlFormPage> {
             ? int.tryParse(_selectedTipoOndaId ?? '')
             : null,
         'turno': 'A',
-        'resultadoVisual': _selectedVisualControlResult,
+        'resultadoVisual':
+            _selectedVisualControlResult == 'Conforme' ? 'Cumple' : 'No Cumple',
+        'observacion': _observationController.text.trim(),
+        'fallasVisuales': [],
+      };
+
+      final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
+
+      if (shouldUseOffline && _selectedAttachment != null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se puede guardar evidencia sin conexión. Revise conexión e intente nuevamente.',
+            ),
+          ),
+        );
+
+        return;
+      }
+
+      try {
+        await _controlApi.guardarRegistro(
+          payload,
+          archivo: _selectedAttachment,
+        );
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Control guardado correctamente')),
+        );
+
+        Navigator.pop(context);
+      } catch (_) {
+        if (_selectedAttachment != null) {
+          if (!mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se pudo guardar con evidencia. Revise conexión e intente nuevamente.',
+              ),
+            ),
+          );
+
+          return;
+        }
+
+        await _pendingRecordsStore.savePendingRecord(payload);
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sin conexión. Registro guardado localmente para sincronizar.',
+            ),
+          ),
+        );
+
+        Navigator.pop(context);
+      }
+
+      return;
+    }
+
+    if (widget.controlContext.operatorArea == 'PRODUCCION') {
+      final payload = {
+        'usuarioId': widget.controlContext.userId,
+        'procesoId': widget.controlContext.processId,
+        'maquinaId': widget.controlContext.machineId,
+        'formularioId': widget.controlContext.formId,
+        'area': widget.controlContext.operatorArea,
+        'np': _npController.text.trim(),
+        'codigoProducto': _productCode,
+        'descripcionProducto': _productDescription,
+        'tipoOndaId': widget.controlContext.processId == 1
+            ? int.tryParse(_selectedTipoOndaId ?? '')
+            : null,
+        'turno': 'A',
+        'resultadoVisual':
+            _selectedVisualControlResult == 'Conforme' ? 'Cumple' : 'No Cumple',
         'observacion': _observationController.text.trim(),
         'fallasVisuales': _selectedFailures
             .map(
@@ -145,27 +276,28 @@ class _ControlFormPageState extends State<ControlFormPage> {
             )
             .toList(),
       };
+
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-      if (shouldUseOffline) {
-        await _pendingRecordsStore.savePendingRecord(payload);
-
+      if (shouldUseOffline && _selectedAttachment != null) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Sin conexión. Registro guardado localmente para sincronizar.',
+              'No se puede guardar evidencia sin conexión. Revise conexión e intente nuevamente.',
             ),
           ),
         );
 
-        Navigator.pop(context);
         return;
       }
 
       try {
-        await _controlApi.guardarRegistro(payload);
+        await _controlApi.guardarRegistro(
+          payload,
+          archivo: _selectedAttachment,
+        );
 
         if (!mounted) return;
 
@@ -176,7 +308,21 @@ class _ControlFormPageState extends State<ControlFormPage> {
         );
 
         Navigator.pop(context);
-      } catch (error) {
+      } catch (_) {
+        if (_selectedAttachment != null) {
+          if (!mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se pudo guardar con evidencia. Revise conexión e intente nuevamente.',
+              ),
+            ),
+          );
+
+          return;
+        }
+
         await _pendingRecordsStore.savePendingRecord(payload);
 
         if (!mounted) return;
@@ -191,6 +337,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
         Navigator.pop(context);
       }
+
       return;
     }
 
@@ -201,7 +348,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
           controlContext: widget.controlContext,
           np: _npController.text.trim(),
           selectedFailures: _selectedFailures.toList(),
-          visualValidatedWithoutFailures: _visualValidatedWithoutFailures,
+          visualValidatedWithoutFailures: false,
           observation: _observationController.text.trim(),
         ),
       ),
@@ -468,213 +615,149 @@ class _ControlFormPageState extends State<ControlFormPage> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const Text(
-                              'Fallas visuales',
+                              'Resultado visual',
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Marcar fallas o validar sin fallas',
-                              style: TextStyle(color: Color(0xFFB0BEC5)),
-                            ),
                             const SizedBox(height: 12),
-                            OutlinedButton(
-                              onPressed: _validateWithoutFailures,
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 18),
-                                backgroundColor: _visualValidatedWithoutFailures
-                                    ? const Color(0xFF8BC34A)
-                                    : const Color(0xFFEEF3F5),
-                                side: BorderSide(
-                                  color: _visualValidatedWithoutFailures
-                                      ? const Color(0xFF8BC34A)
-                                      : const Color(0xFF8FA3AD),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                            DropdownButtonFormField<String>(
+                              value: _selectedVisualControlResult,
+                              dropdownColor: const Color(0xFFEEF3F5),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
                               ),
-                              child: Text(
-                                'SIN FALLAS',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _visualValidatedWithoutFailures
-                                      ? Colors.white
-                                      : const Color(0xFF263238),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            for (final criticidad in [
-                              'critico',
-                              'mayor',
-                              'menor'
-                            ]) ...[
-                              if (widget.controlContext.parametrosVisuales.any(
-                                (p) => p['criticidad'] == criticidad,
-                              )) ...[
-                                const SizedBox(height: 18),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: criticidad == 'critico'
-                                        ? const Color(0xFFE53935)
-                                            .withOpacity(0.18)
-                                        : criticidad == 'mayor'
-                                            ? const Color(0xFFFFB300)
-                                                .withOpacity(0.18)
-                                            : const Color(0xFF64B5F6)
-                                                .withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: criticidad == 'critico'
-                                          ? const Color(0xFFE53935)
-                                          : criticidad == 'mayor'
-                                              ? const Color(0xFFFFB300)
-                                              : const Color(0xFF64B5F6),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    criticidad == 'critico'
-                                        ? 'CRÍTICOS'
-                                        : criticidad == 'mayor'
-                                            ? 'MAYORES'
-                                            : 'MENORES',
+                              selectedItemBuilder: (context) {
+                                return _visualControlResults.map((item) {
+                                  return Text(
+                                    item,
                                     style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
                                       color: Colors.white,
-                                      letterSpacing: 1,
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                  ),
+                                  );
+                                }).toList();
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Resultado',
+                                labelStyle: TextStyle(color: Color(0xFFB0BEC5)),
+                                enabledBorder: OutlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Color(0xFF546E7A)),
                                 ),
-                                const SizedBox(height: 12),
-                                for (final parameter in widget
-                                    .controlContext.parametrosVisuales
-                                    .where(
-                                  (p) => p['criticidad'] == criticidad,
-                                ))
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 10),
-                                    child: OutlinedButton(
-                                      onPressed: () => _toggleFailure(
-                                        parameter['id'].toString(),
-                                      ),
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 18),
-                                        backgroundColor:
-                                            _selectedFailures.contains(
-                                          parameter['id'].toString(),
-                                        )
-                                                ? const Color(0xFFE57373)
-                                                : const Color(0xFFEEF3F5),
-                                        side: BorderSide(
-                                          color: _selectedFailures.contains(
-                                            parameter['id'].toString(),
-                                          )
-                                              ? const Color(0xFFE57373)
-                                              : const Color(0xFF8FA3AD),
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                        ),
-                                      ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderSide:
+                                      BorderSide(color: Color(0xFF8BC34A)),
+                                ),
+                              ),
+                              items: _visualControlResults
+                                  .map(
+                                    (item) => DropdownMenuItem(
+                                      value: item,
                                       child: Text(
-                                        parameter['nombre'].toString(),
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: _selectedFailures.contains(
-                                            parameter['id'].toString(),
-                                          )
-                                              ? Colors.white
-                                              : const Color(0xFF263238),
+                                        item,
+                                        style: const TextStyle(
+                                          color: Color(0xFF263238),
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ),
-                                  ),
-                              ],
-                            ],
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedVisualControlResult = value;
+
+                                  if (value == 'Conforme') {
+                                    _selectedFailures.clear();
+                                    _visualValidatedWithoutFailures = true;
+                                  } else {
+                                    _visualValidatedWithoutFailures = false;
+                                  }
+                                });
+                              },
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (widget.controlContext.operatorArea ==
-                          'PRODUCCION') ...[
+                      if (_selectedVisualControlResult == 'No Conforme') ...[
                         _SectionCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const Text(
-                                'Resultado visual',
+                                'Tipo de defecto',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _selectedVisualControlResult,
-                                dropdownColor: const Color(0xFFEEF3F5),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                selectedItemBuilder: (context) {
-                                  return _visualControlResults.map((item) {
-                                    return Text(
-                                      item,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    );
-                                  }).toList();
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Resultado',
-                                  labelStyle:
-                                      TextStyle(color: Color(0xFFB0BEC5)),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide:
-                                        BorderSide(color: Color(0xFF546E7A)),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide:
-                                        BorderSide(color: Color(0xFF8BC34A)),
-                                  ),
-                                ),
-                                items: _visualControlResults
-                                    .map(
-                                      (item) => DropdownMenuItem(
-                                        value: item,
-                                        child: Text(
-                                          item,
-                                          style: const TextStyle(
-                                            color: Color(0xFF263238),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedVisualControlResult = value;
-                                  });
-                                },
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Seleccione máximo 3 defectos',
+                                style: TextStyle(color: Color(0xFFB0BEC5)),
                               ),
+                              const SizedBox(height: 12),
+                              for (final parameter
+                                  in widget.controlContext.parametrosVisuales)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: OutlinedButton(
+                                    onPressed: () {
+                                      final parameterId =
+                                          parameter['id'].toString();
+
+                                      if (!_selectedFailures
+                                              .contains(parameterId) &&
+                                          _selectedFailures.length >= 3) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'Puede seleccionar máximo 3 defectos'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      _toggleFailure(parameterId);
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 18),
+                                      backgroundColor:
+                                          _selectedFailures.contains(
+                                                  parameter['id'].toString())
+                                              ? const Color(0xFFE57373)
+                                              : const Color(0xFFEEF3F5),
+                                      side: BorderSide(
+                                        color: _selectedFailures.contains(
+                                                parameter['id'].toString())
+                                            ? const Color(0xFFE57373)
+                                            : const Color(0xFF8FA3AD),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      parameter['nombre'].toString(),
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: _selectedFailures.contains(
+                                                parameter['id'].toString())
+                                            ? Colors.white
+                                            : const Color(0xFF263238),
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -699,6 +782,79 @@ class _ControlFormPageState extends State<ControlFormPage> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 16),
+                      if (isProduction) ...[
+                        _SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'Evidencia opcional',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Puede adjuntar una foto o archivo PDF/JPG/PNG.',
+                                style: TextStyle(color: Color(0xFFB0BEC5)),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: _takePhoto,
+                                icon: const Icon(Icons.camera_alt),
+                                label: const Text('Tomar foto'),
+                                style: OutlinedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(
+                                      color: Color(0xFF8BC34A)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                onPressed: _pickFile,
+                                icon: const Icon(Icons.attach_file),
+                                label: const Text('Seleccionar archivo'),
+                                style: OutlinedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(
+                                      color: Color(0xFF8BC34A)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                              ),
+                              if (_selectedAttachmentName != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Archivo: $_selectedAttachmentName',
+                                  style: const TextStyle(
+                                    color: Color(0xFFCFD8DC),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _removeAttachment,
+                                  icon: const Icon(Icons.close),
+                                  label: const Text('Quitar archivo'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: const Color(0xFFFFCC80),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 64,

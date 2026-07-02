@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/api/control_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
@@ -35,31 +38,18 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   final TextEditingController _wasteQuantityController =
       TextEditingController();
 
-  String? _selectedVisualControlResult;
-  final Set<int> _selectedLabTestIds = {};
-  final Set<int> _selectedMaterialIds = {};
-  String? _selectedAction;
+  final ImagePicker _imagePicker = ImagePicker();
+
+  File? _selectedAttachment;
+  String? _selectedAttachmentName;
+
   String? _selectedWasteType;
   String? _selectedTipoOndaId;
-  String? _selectedState;
   String? _productCode;
   String? _productDescription;
 
   bool _hasWaste = false;
   bool _hasLabTest = false;
-
-  final List<String> _visualControlResults = [
-    'Cumple',
-    'No Cumple',
-    'No Aplica',
-  ];
-
-  final List<String> _actions = [
-    'Ajuste',
-    'Segregar',
-    'No Liberar',
-    'Detener',
-  ];
 
   List<String> get _wasteTypes {
     if (widget.controlContext.processId == 1) {
@@ -79,14 +69,6 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     ];
   }
 
-  final List<String> _states = [
-    'Aprobado',
-    'Aprobado con observaciones',
-    'Rechazado',
-    'Cuarentena',
-    'Liberado',
-    'Despachado',
-  ];
   Future<void> _scanProductCode() async {
     final result = await Navigator.push<String>(
       context,
@@ -111,51 +93,45 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     }
   }
 
+  Future<void> _takePhoto() async {
+    final XFile? photo = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 75,
+    );
+
+    if (photo == null) return;
+
+    setState(() {
+      _selectedAttachment = File(photo.path);
+      _selectedAttachmentName = photo.name;
+    });
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+    );
+
+    if (result == null || result.files.single.path == null) return;
+
+    setState(() {
+      _selectedAttachment = File(result.files.single.path!);
+      _selectedAttachmentName = result.files.single.name;
+    });
+  }
+
+  void _removeAttachment() {
+    setState(() {
+      _selectedAttachment = null;
+      _selectedAttachmentName = null;
+    });
+  }
+
   Future<void> _saveControl() async {
-    if (_selectedVisualControlResult == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar resultado visual'),
-        ),
-      );
-      return;
-    }
+    final bool isNoConforme = !widget.visualValidatedWithoutFailures;
 
-    if (_selectedVisualControlResult == 'No Cumple' &&
-        _selectedAction == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar acción'),
-        ),
-      );
-      return;
-    }
-
-    if (_selectedState == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar estado'),
-        ),
-      );
-      return;
-    }
-    if (_hasLabTest && _selectedMaterialIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar tipo de material'),
-        ),
-      );
-      return;
-    }
-
-    if (_hasLabTest && _selectedLabTestIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe seleccionar al menos un ensayo'),
-        ),
-      );
-      return;
-    }
     if (widget.controlContext.processId == 1 && _selectedTipoOndaId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Debe seleccionar tipo de onda')),
@@ -163,22 +139,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       return;
     }
 
-    int actionId = 1;
-
-    switch (_selectedAction) {
-      case 'Ajuste':
-        actionId = 1;
-        break;
-      case 'Segregar':
-        actionId = 2;
-        break;
-      case 'No Liberar':
-        actionId = 3;
-        break;
-      case 'Detener':
-        actionId = 4;
-        break;
-    }
+    const int actionId = 1;
 
     final payload = {
       'usuarioId': widget.controlContext.userId,
@@ -193,53 +154,45 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
           ? int.tryParse(_selectedTipoOndaId ?? '')
           : null,
       'turno': 'A',
-      'resultadoVisual': _selectedVisualControlResult,
+      'resultadoVisual':
+          widget.visualValidatedWithoutFailures ? 'Cumple' : 'No Cumple',
       'observacion': widget.observation,
-      'fallasVisuales': widget.selectedFailures
-          .map(
-            (id) => {
-              'parametroId': int.parse(id),
-              'accionId': actionId,
-              'observacion': widget.observation,
-            },
-          )
-          .toList(),
-      'ensayosLaboratorio': _hasLabTest
-          ? _selectedLabTestIds
-              .expand(
-                (ensayoId) => _selectedMaterialIds.map(
-                  (materialId) => {
-                    'ensayoId': ensayoId,
-                    'materialId': materialId,
-                    'observacion': null,
-                  },
-                ),
+      'fallasVisuales': isNoConforme
+          ? widget.selectedFailures
+              .map(
+                (id) => {
+                  'parametroId': int.parse(id),
+                  'accionId': actionId,
+                  'observacion': widget.observation,
+                },
               )
               .toList()
           : [],
+      'requiereEnsayoLaboratorio': _hasLabTest,
+      'ensayosLaboratorio': [],
     };
 
     final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-    if (shouldUseOffline) {
-      await _pendingRecordsStore.savePendingRecord(payload);
-
+    if (shouldUseOffline && _selectedAttachment != null) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sin conexión. Registro guardado localmente para sincronizar.',
+            'No se puede guardar evidencia sin conexión. Revise conexión e intente nuevamente.',
           ),
         ),
       );
 
-      Navigator.popUntil(context, (route) => route.isFirst);
       return;
     }
 
     try {
-      await _controlApi.guardarRegistro(payload);
+      await _controlApi.guardarRegistro(
+        payload,
+        archivo: _selectedAttachment,
+      );
 
       if (!mounted) return;
 
@@ -250,7 +203,21 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       );
 
       Navigator.popUntil(context, (route) => route.isFirst);
-    } catch (error) {
+    } catch (_) {
+      if (_selectedAttachment != null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo guardar con evidencia. Revise conexión e intente nuevamente.',
+            ),
+          ),
+        );
+
+        return;
+      }
+
       await _pendingRecordsStore.savePendingRecord(payload);
 
       if (!mounted) return;
@@ -448,347 +415,49 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      _SectionCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const Text(
-                              'Resultado visual',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              value: _selectedVisualControlResult,
-                              dropdownColor: const Color(0xFFEEF3F5),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              selectedItemBuilder: (context) {
-                                return _visualControlResults.map((item) {
-                                  return Text(
-                                    item,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  );
-                                }).toList();
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Resultado',
-                                labelStyle: TextStyle(
-                                  color: Color(0xFFB0BEC5),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF546E7A),
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF8BC34A),
-                                  ),
-                                ),
-                              ),
-                              items: _visualControlResults
-                                  .map(
-                                    (item) => DropdownMenuItem(
-                                      value: item,
-                                      child: Text(
-                                        item,
-                                        style: const TextStyle(
-                                          color: Color(0xFF263238),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedVisualControlResult = value;
-
-                                  if (value != 'No Cumple') {
-                                    _selectedAction = null;
-                                  }
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
                       const SizedBox(height: 16),
                       _SectionCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const Text(
-                              'Acción',
+                              'Registrar ensayo laboratorio',
                               style: TextStyle(
-                                fontSize: 20,
+                                fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            if (_selectedVisualControlResult ==
-                                'No Cumple') ...[
-                              DropdownButtonFormField<String>(
-                                value: _selectedAction,
-                                dropdownColor: const Color(0xFFEEF3F5),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                selectedItemBuilder: (context) {
-                                  return _actions.map((item) {
-                                    return Text(
-                                      item,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    );
-                                  }).toList();
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Acción',
-                                  labelStyle: TextStyle(
-                                    color: Color(0xFFB0BEC5),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF546E7A),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF8BC34A),
-                                    ),
-                                  ),
-                                ),
-                                items: _actions
-                                    .map(
-                                      (item) => DropdownMenuItem(
-                                        value: item,
-                                        child: Text(
-                                          item,
-                                          style: const TextStyle(
-                                            color: Color(0xFF263238),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedAction = value;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            DropdownButtonFormField<String>(
-                              value: _selectedState,
-                              dropdownColor: const Color(0xFFEEF3F5),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              selectedItemBuilder: (context) {
-                                return _states.map((item) {
-                                  return Text(
-                                    item,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  );
-                                }).toList();
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Estado',
-                                labelStyle: TextStyle(
-                                  color: Color(0xFFB0BEC5),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF546E7A),
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF8BC34A),
-                                  ),
-                                ),
-                              ),
-                              items: _states
-                                  .map(
-                                    (item) => DropdownMenuItem(
-                                      value: item,
-                                      child: Text(
-                                        item,
-                                        style: const TextStyle(
-                                          color: Color(0xFF263238),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedState = value;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _SectionCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SwitchListTile(
+                            RadioListTile<bool>(
                               contentPadding: EdgeInsets.zero,
                               activeColor: const Color(0xFF8BC34A),
                               title: const Text(
-                                'Registrar ensayo laboratorio',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                                'Sí',
+                                style: TextStyle(color: Colors.white),
                               ),
-                              value: _hasLabTest,
+                              value: true,
+                              groupValue: _hasLabTest,
                               onChanged: (value) {
                                 setState(() {
-                                  _hasLabTest = value;
-
-                                  if (!_hasLabTest) {
-                                    _selectedLabTestIds.clear();
-                                    _selectedMaterialIds.clear();
-                                  }
+                                  _hasLabTest = value ?? false;
                                 });
                               },
                             ),
-                            if (_hasLabTest) ...[
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color:
-                                      const Color(0xFF8BC34A).withOpacity(0.18),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color: const Color(0xFF8BC34A)),
-                                ),
-                                child: const Text(
-                                  'Tipo de Material',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                            RadioListTile<bool>(
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: const Color(0xFF8BC34A),
+                              title: const Text(
+                                'No',
+                                style: TextStyle(color: Colors.white),
                               ),
-                              const SizedBox(height: 8),
-                              for (final material
-                                  in widget.controlContext.materiales)
-                                CheckboxListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  activeColor: const Color(0xFF8BC34A),
-                                  checkColor: Colors.white,
-                                  side: const BorderSide(
-                                    color: Colors.white,
-                                    width: 2,
-                                  ),
-                                  title: Text(
-                                    material['nombre'].toString(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  value: _selectedMaterialIds.contains(
-                                    int.parse(material['id'].toString()),
-                                  ),
-                                  onChanged: (value) {
-                                    final materialId =
-                                        int.parse(material['id'].toString());
-
-                                    setState(() {
-                                      if (value == true) {
-                                        _selectedMaterialIds.add(materialId);
-                                      } else {
-                                        _selectedMaterialIds.remove(materialId);
-                                      }
-                                    });
-                                  },
-                                ),
-                              const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color:
-                                      const Color(0xFF8BC34A).withOpacity(0.18),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color: const Color(0xFF8BC34A)),
-                                ),
-                                child: const Text(
-                                  'Ensayos de Laboratorio',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              for (final labTest
-                                  in widget.controlContext.ensayosLaboratorio)
-                                CheckboxListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  activeColor: const Color(0xFF8BC34A),
-                                  checkColor: Colors.white,
-                                  side: const BorderSide(
-                                    color: Colors.white,
-                                    width: 2,
-                                  ),
-                                  title: Text(
-                                    labTest['nombre'].toString(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  value: _selectedLabTestIds.contains(
-                                    int.parse(labTest['id'].toString()),
-                                  ),
-                                  onChanged: (value) {
-                                    final labTestId =
-                                        int.parse(labTest['id'].toString());
-
-                                    setState(() {
-                                      if (value == true) {
-                                        _selectedLabTestIds.add(labTestId);
-                                      } else {
-                                        _selectedLabTestIds.remove(labTestId);
-                                      }
-                                    });
-                                  },
-                                ),
-                            ],
+                              value: false,
+                              groupValue: _hasLabTest,
+                              onChanged: (value) {
+                                setState(() {
+                                  _hasLabTest = value ?? false;
+                                });
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -812,6 +481,11 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                               onChanged: (value) {
                                 setState(() {
                                   _hasWaste = value;
+
+                                  if (!_hasWaste) {
+                                    _selectedWasteType = null;
+                                    _wasteQuantityController.clear();
+                                  }
                                 });
                               },
                             ),
@@ -891,6 +565,77 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                                       color: Color(0xFF8BC34A),
                                     ),
                                   ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _SectionCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Evidencia opcional',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Puede adjuntar una foto o archivo PDF/JPG/PNG.',
+                              style: TextStyle(color: Color(0xFFB0BEC5)),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: _takePhoto,
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Tomar foto'),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                foregroundColor: Colors.white,
+                                side:
+                                    const BorderSide(color: Color(0xFF8BC34A)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: _pickFile,
+                              icon: const Icon(Icons.attach_file),
+                              label: const Text('Seleccionar archivo'),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                foregroundColor: Colors.white,
+                                side:
+                                    const BorderSide(color: Color(0xFF8BC34A)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
+                            if (_selectedAttachmentName != null) ...[
+                              const SizedBox(height: 12),
+                              Text(
+                                'Archivo: $_selectedAttachmentName',
+                                style: const TextStyle(
+                                  color: Color(0xFFCFD8DC),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: _removeAttachment,
+                                icon: const Icon(Icons.close),
+                                label: const Text('Quitar archivo'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFFFCC80),
                                 ),
                               ),
                             ],
