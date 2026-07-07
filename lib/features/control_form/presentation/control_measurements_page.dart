@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -40,7 +40,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
 
   final ImagePicker _imagePicker = ImagePicker();
 
-  File? _selectedAttachment;
+  Uint8List? _selectedAttachmentBytes;
   String? _selectedAttachmentName;
 
   String? _selectedWasteType;
@@ -101,8 +101,10 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
 
     if (photo == null) return;
 
+    final bytes = await photo.readAsBytes();
+
     setState(() {
-      _selectedAttachment = File(photo.path);
+      _selectedAttachmentBytes = bytes;
       _selectedAttachmentName = photo.name;
     });
   }
@@ -112,19 +114,20 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       allowMultiple: false,
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
     );
 
-    if (result == null || result.files.single.path == null) return;
+    if (result == null || result.files.single.bytes == null) return;
 
     setState(() {
-      _selectedAttachment = File(result.files.single.path!);
+      _selectedAttachmentBytes = result.files.single.bytes;
       _selectedAttachmentName = result.files.single.name;
     });
   }
 
   void _removeAttachment() {
     setState(() {
-      _selectedAttachment = null;
+      _selectedAttachmentBytes = null;
       _selectedAttachmentName = null;
     });
   }
@@ -170,11 +173,16 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
           : [],
       'requiereEnsayoLaboratorio': _hasLabTest,
       'ensayosLaboratorio': [],
+      'requiereMerma': _hasWaste,
+      'tipoMerma': _hasWaste ? _selectedWasteType : null,
+      'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
+          ? _wasteQuantityController.text
+          : null,
     };
 
     final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-    if (shouldUseOffline && _selectedAttachment != null) {
+    if (shouldUseOffline && _selectedAttachmentBytes != null) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -191,7 +199,8 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     try {
       await _controlApi.guardarRegistro(
         payload,
-        archivo: _selectedAttachment,
+        archivoBytes: _selectedAttachmentBytes,
+        archivoNombre: _selectedAttachmentName,
       );
 
       if (!mounted) return;
@@ -204,7 +213,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
 
       Navigator.popUntil(context, (route) => route.isFirst);
     } catch (_) {
-      if (_selectedAttachment != null) {
+      if (_selectedAttachmentBytes != null) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(

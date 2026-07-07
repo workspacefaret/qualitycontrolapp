@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -32,7 +32,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
   final ImagePicker _imagePicker = ImagePicker();
 
-  File? _selectedAttachment;
+  Uint8List? _selectedAttachmentBytes;
   String? _selectedAttachmentName;
   final Set<String> _selectedFailures = {};
   bool _visualValidatedWithoutFailures = false;
@@ -104,8 +104,10 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
     if (photo == null) return;
 
+    final bytes = await photo.readAsBytes();
+
     setState(() {
-      _selectedAttachment = File(photo.path);
+      _selectedAttachmentBytes = bytes;
       _selectedAttachmentName = photo.name;
     });
   }
@@ -115,19 +117,20 @@ class _ControlFormPageState extends State<ControlFormPage> {
       allowMultiple: false,
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
     );
 
-    if (result == null || result.files.single.path == null) return;
+    if (result == null || result.files.single.bytes == null) return;
 
     setState(() {
-      _selectedAttachment = File(result.files.single.path!);
+      _selectedAttachmentBytes = result.files.single.bytes;
       _selectedAttachmentName = result.files.single.name;
     });
   }
 
   void _removeAttachment() {
     setState(() {
-      _selectedAttachment = null;
+      _selectedAttachmentBytes = null;
       _selectedAttachmentName = null;
     });
   }
@@ -189,7 +192,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-      if (shouldUseOffline && _selectedAttachment != null) {
+      if (shouldUseOffline && _selectedAttachmentBytes != null) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -206,7 +209,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
       try {
         await _controlApi.guardarRegistro(
           payload,
-          archivo: _selectedAttachment,
+          archivoBytes: _selectedAttachmentBytes,
+          archivoNombre: _selectedAttachmentName,
         );
 
         if (!mounted) return;
@@ -217,7 +221,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
         Navigator.pop(context);
       } catch (_) {
-        if (_selectedAttachment != null) {
+        if (_selectedAttachmentBytes != null) {
           if (!mounted) return;
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -279,7 +283,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-      if (shouldUseOffline && _selectedAttachment != null) {
+      if (shouldUseOffline && _selectedAttachmentBytes != null) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -296,7 +300,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
       try {
         await _controlApi.guardarRegistro(
           payload,
-          archivo: _selectedAttachment,
+          archivoBytes: _selectedAttachmentBytes,
+          archivoNombre: _selectedAttachmentName,
         );
 
         if (!mounted) return;
@@ -309,7 +314,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
         Navigator.pop(context);
       } catch (_) {
-        if (_selectedAttachment != null) {
+        if (_selectedAttachmentBytes != null) {
           if (!mounted) return;
 
           ScaffoldMessenger.of(context).showSnackBar(

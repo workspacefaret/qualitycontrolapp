@@ -5,6 +5,7 @@ import '../../core/local/pending_records_store.dart';
 import '../control_form/domain/control_context.dart';
 import '../control_form/presentation/control_form_page.dart';
 import '../control_form/presentation/qr_scanner_page.dart';
+import '../calidad_faret/presentation/calidad_faret_form_page.dart';
 import '../../core/local/cached_users_store.dart';
 import '../../core/local/offline_catalog_store.dart';
 import '../../core/network/network_mode_service.dart';
@@ -30,9 +31,12 @@ class _HomePageState extends State<HomePage> {
   bool _loadingOperators = true;
 
   final List<String> _areas = [
-    'CALIDAD',
-    'PRODUCCION',
+    'CALIDAD INNPACK',
+    'PRODUCCION INNPACK',
+    'CALIDAD/PRODUCCION FARET',
   ];
+
+  bool get _isCalidadFaret => _selectedArea == 'CALIDAD FARET';
   final CatalogosApi _catalogosApi = CatalogosApi();
   final ControlApi _controlApi = ControlApi();
   final PendingRecordsStore _pendingRecordsStore = PendingRecordsStore();
@@ -204,6 +208,15 @@ class _HomePageState extends State<HomePage> {
         });
       }
     }
+  }
+
+  Future<void> _openCalidadFaret(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CalidadFaretFormPage(),
+      ),
+    );
   }
 
   Future<void> _startQrScanner(BuildContext context) async {
@@ -434,52 +447,54 @@ class _HomePageState extends State<HomePage> {
                           });
                         },
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _loadingOperators
-                            ? 'Cargando operadores...'
-                            : 'Operador',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFB0BEC5),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<Map<String, dynamic>>(
-                        value: _selectedOperator,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: const Color(0xFFEEF3F5),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                      if (!_isCalidadFaret) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _loadingOperators
+                              ? 'Cargando operadores...'
+                              : 'Operador',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFB0BEC5),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF8FA3AD),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<Map<String, dynamic>>(
+                          value: _selectedOperator,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: const Color(0xFFEEF3F5),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF8FA3AD),
+                              ),
                             ),
                           ),
-                        ),
-                        items: _operators
-                            .map(
-                              (operator) =>
-                                  DropdownMenuItem<Map<String, dynamic>>(
-                                value: operator,
-                                child: Text(
-                                  operator['nombre_completo'].toString(),
+                          items: _operators
+                              .map(
+                                (operator) =>
+                                    DropdownMenuItem<Map<String, dynamic>>(
+                                  value: operator,
+                                  child: Text(
+                                    operator['nombre_completo'].toString(),
+                                  ),
                                 ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _loadingOperators
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _selectedOperator = value;
-                                });
-                              },
-                      ),
+                              )
+                              .toList(),
+                          onChanged: _loadingOperators
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _selectedOperator = value;
+                                  });
+                                },
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -502,11 +517,19 @@ class _HomePageState extends State<HomePage> {
                       SizedBox(
                         height: 58,
                         child: ElevatedButton.icon(
-                          onPressed: () => _startQrScanner(context),
-                          icon: const Icon(Icons.qr_code_scanner),
-                          label: const Text(
-                            'ESCANEAR QR',
-                            style: TextStyle(
+                          onPressed: () => _isCalidadFaret
+                              ? _openCalidadFaret(context)
+                              : _startQrScanner(context),
+                          icon: Icon(
+                            _isCalidadFaret
+                                ? Icons.assignment
+                                : Icons.qr_code_scanner,
+                          ),
+                          label: Text(
+                            _isCalidadFaret
+                                ? 'ABRIR FORMULARIO'
+                                : 'ESCANEAR QR',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.8,

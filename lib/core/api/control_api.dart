@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -42,9 +42,10 @@ class ControlApi {
 
   Future<Map<String, dynamic>> guardarRegistro(
     Map<String, dynamic> payload, {
-    File? archivo,
+    Uint8List? archivoBytes,
+    String? archivoNombre,
   }) async {
-    if (archivo == null) {
+    if (archivoBytes == null) {
       final response = await _apiClient.post(
         '/control/registros',
         payload,
@@ -64,9 +65,10 @@ class ControlApi {
     request.fields['payload'] = jsonEncode(payload);
 
     request.files.add(
-      await http.MultipartFile.fromPath(
+      http.MultipartFile.fromBytes(
         'archivo',
-        archivo.path,
+        archivoBytes,
+        filename: archivoNombre ?? 'archivo',
       ),
     );
 
