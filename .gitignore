@@ -16,6 +16,12 @@ Thumbs.db
 !.vscode/extensions.json
 
 # =========================
+# Markdown docs (pueden contener info sensible: IPs internas, rutas de
+# servidores, credenciales de despliegue, etc.)
+# =========================
+*.md
+
+# =========================
 # Secrets / Environment
 # =========================
 .env
@@ -95,3 +101,6 @@ ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
 .atom/
 .buildlog/
 migrate_working_dir/
+
+# Truststore temporal (certificado Kaspersky) para builds locales de Gradle
+.certs_tmp/

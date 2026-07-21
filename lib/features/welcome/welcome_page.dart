@@ -330,7 +330,7 @@ class _WelcomePageState extends State<WelcomePage>
                               ),
                               const SizedBox(height: 22),
                               const Text(
-                                'INNPACK • CONTROL OPERACIONAL',
+                                'FARET INNPACK • CONTROL OPERACIONAL',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 12,

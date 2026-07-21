@@ -6,6 +6,8 @@ import '../control_form/domain/control_context.dart';
 import '../control_form/presentation/control_form_page.dart';
 import '../control_form/presentation/qr_scanner_page.dart';
 import '../calidad_faret/presentation/calidad_faret_form_page.dart';
+import '../calidad_faret/presentation/calidad_faret_pallet_form_page.dart';
+import '../../core/api/calidad_faret_operadores_api.dart';
 import '../../core/local/cached_users_store.dart';
 import '../../core/local/offline_catalog_store.dart';
 import '../../core/network/network_mode_service.dart';
@@ -23,21 +25,29 @@ class _HomePageState extends State<HomePage> {
     await _downloadOfflineCatalog();
 
     await _loadOperators();
+    await _loadFaretOperadores();
     await _loadPendingCount();
   }
 
   String? _selectedArea;
   Map<String, dynamic>? _selectedOperator;
   bool _loadingOperators = true;
+  String _faretOperadorText = '';
+  List<String> _faretOperadores = [];
 
   final List<String> _areas = [
     'CALIDAD INNPACK',
     'PRODUCCION INNPACK',
     'CALIDAD/PRODUCCION FARET',
+    'CONTROL PALLET / PAPEL FARET',
   ];
 
-  bool get _isCalidadFaret => _selectedArea == 'CALIDAD FARET';
+  bool get _isCalidadFaret => _selectedArea == 'CALIDAD/PRODUCCION FARET';
+  bool get _isControlPalletPapelFaret =>
+      _selectedArea == 'CONTROL PALLET / PAPEL FARET';
   final CatalogosApi _catalogosApi = CatalogosApi();
+  final CalidadFaretOperadoresApi _calidadFaretOperadoresApi =
+      CalidadFaretOperadoresApi();
   final ControlApi _controlApi = ControlApi();
   final PendingRecordsStore _pendingRecordsStore = PendingRecordsStore();
   final CachedUsersStore _cachedUsersStore = CachedUsersStore();
@@ -101,6 +111,20 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       );
+    }
+  }
+
+  Future<void> _loadFaretOperadores() async {
+    try {
+      final operadores = await _calidadFaretOperadoresApi.obtenerOperadores();
+
+      if (!mounted) return;
+
+      setState(() {
+        _faretOperadores = operadores;
+      });
+    } catch (_) {
+      // Sugerencias no disponibles; el campo sigue siendo texto libre.
     }
   }
 
@@ -211,12 +235,38 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openCalidadFaret(BuildContext context) async {
+    final operador = _faretOperadorText.trim();
+
+    if (operador.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe ingresar el operador')),
+      );
+      return;
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const CalidadFaretFormPage(),
+        builder: (_) => CalidadFaretFormPage(operador: operador),
       ),
     );
+
+    await _loadFaretOperadores();
+  }
+
+  Future<void> _openControlPalletPapelFaret(BuildContext context) async {
+    final operador = _faretOperadorText.trim();
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CalidadFaretPalletFormPage(
+          operador: operador.isEmpty ? null : operador,
+        ),
+      ),
+    );
+
+    await _loadFaretOperadores();
   }
 
   Future<void> _startQrScanner(BuildContext context) async {
@@ -377,7 +427,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       Center(
                         child: Image.asset(
-                          'assets/images/logo.png',
+                          'assets/images/logo2.png',
                           height: 64,
                           errorBuilder: (_, __, ___) {
                             return const Icon(
@@ -447,7 +497,7 @@ class _HomePageState extends State<HomePage> {
                           });
                         },
                       ),
-                      if (!_isCalidadFaret) ...[
+                      if (!_isCalidadFaret && !_isControlPalletPapelFaret) ...[
                         const SizedBox(height: 16),
                         Text(
                           _loadingOperators
@@ -494,6 +544,66 @@ class _HomePageState extends State<HomePage> {
                                   });
                                 },
                         ),
+                      ] else ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Operador',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFB0BEC5),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Autocomplete<String>(
+                          initialValue:
+                              TextEditingValue(text: _faretOperadorText),
+                          optionsBuilder: (textEditingValue) {
+                            if (textEditingValue.text.isEmpty) {
+                              return _faretOperadores;
+                            }
+
+                            final query = textEditingValue.text.toLowerCase();
+
+                            return _faretOperadores.where(
+                              (operador) =>
+                                  operador.toLowerCase().contains(query),
+                            );
+                          },
+                          onSelected: (selection) {
+                            setState(() {
+                              _faretOperadorText = selection;
+                            });
+                          },
+                          fieldViewBuilder: (
+                            context,
+                            controller,
+                            focusNode,
+                            onFieldSubmitted,
+                          ) {
+                            return TextFormField(
+                              controller: controller,
+                              focusNode: focusNode,
+                              decoration: InputDecoration(
+                                filled: true,
+                                fillColor: const Color(0xFFEEF3F5),
+                                hintText: 'Escriba o elija un operador',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFF8FA3AD),
+                                  ),
+                                ),
+                              ),
+                              onChanged: (value) {
+                                _faretOperadorText = value;
+                              },
+                            );
+                          },
+                        ),
                       ],
                       const SizedBox(height: 20),
                       Container(
@@ -517,16 +627,22 @@ class _HomePageState extends State<HomePage> {
                       SizedBox(
                         height: 58,
                         child: ElevatedButton.icon(
-                          onPressed: () => _isCalidadFaret
-                              ? _openCalidadFaret(context)
-                              : _startQrScanner(context),
+                          onPressed: () {
+                            if (_isCalidadFaret) {
+                              _openCalidadFaret(context);
+                            } else if (_isControlPalletPapelFaret) {
+                              _openControlPalletPapelFaret(context);
+                            } else {
+                              _startQrScanner(context);
+                            }
+                          },
                           icon: Icon(
-                            _isCalidadFaret
+                            (_isCalidadFaret || _isControlPalletPapelFaret)
                                 ? Icons.assignment
                                 : Icons.qr_code_scanner,
                           ),
                           label: Text(
-                            _isCalidadFaret
+                            (_isCalidadFaret || _isControlPalletPapelFaret)
                                 ? 'ABRIR FORMULARIO'
                                 : 'ESCANEAR QR',
                             style: const TextStyle(

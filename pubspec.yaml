@@ -34,10 +34,10 @@ dependencies:
   http: ^0.13.6
   mobile_scanner: 5.2.3
   shared_preferences: ^2.0.15
-  connectivity_plus: 3.0.6
+  connectivity_plus: ^6.1.0
 
   image_picker: 1.2.3
-  file_picker: ^5.2.11
+  file_picker: ^11.0.2
 
   cupertino_icons: ^1.0.2
 

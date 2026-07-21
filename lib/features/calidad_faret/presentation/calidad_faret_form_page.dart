@@ -9,7 +9,9 @@ import '../../../core/network/network_mode_service.dart';
 import '../domain/calidad_faret_catalog.dart';
 
 class CalidadFaretFormPage extends StatefulWidget {
-  const CalidadFaretFormPage({super.key});
+  final String operador;
+
+  const CalidadFaretFormPage({super.key, required this.operador});
 
   @override
   State<CalidadFaretFormPage> createState() => _CalidadFaretFormPageState();
@@ -91,7 +93,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
       return;
     }
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       allowMultiple: true,
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
@@ -213,6 +215,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
       'operadorOtro': _selectedOperador == 'Otros'
           ? _operadorOtroController.text.trim()
           : null,
+      'operadorRegistro': widget.operador,
       'maquina': _selectedMaquina,
       'presentaDefectos': _presentaDefectos,
       'areaDefecto': _presentaDefectos ? _selectedAreaDefecto : null,

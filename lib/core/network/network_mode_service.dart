@@ -6,11 +6,11 @@ import '../api/api_client.dart';
 class NetworkModeService {
   Future<bool> shouldUseOfflineMode() async {
     try {
-      final connectivityResult = await Connectivity().checkConnectivity();
+      final connectivityResults = await Connectivity().checkConnectivity();
 
-      final hasNoConnection =
-          connectivityResult == ConnectivityResult.none ||
-          connectivityResult.toString().contains('none');
+      final hasNoConnection = connectivityResults.every(
+        (result) => result == ConnectivityResult.none,
+      );
 
       if (hasNoConnection) {
         return true;
