@@ -8,6 +8,10 @@ const pool = require('./src/config/database');
 const catalogosRoutes = require('./src/routes/catalogos.routes');
 const controlRoutes = require('./src/routes/control.routes');
 const calidadFaretRoutes = require('./src/routes/calidadFaret.routes');
+const calidadFaretPalletRoutes = require('./src/routes/calidadFaretPallet.routes');
+const calidadFaretOperadoresRoutes = require('./src/routes/calidadFaretOperadores.routes');
+const ordenFabricacionRoutes = require('./src/routes/ordenFabricacion.routes');
+const bobinaRoutes = require('./src/routes/bobina.routes');
 
 const app = express();
 
@@ -16,6 +20,7 @@ const allowedOrigins = [
   'http://localhost:8080',
   'http://10.10.50.21:8080',
   'https://workspace.faret.cl',
+  'https://qualitycontrol.faret.cl',
 ];
 
 const corsOptions = {
@@ -65,7 +70,11 @@ app.get('/api/health', async (req, res) => {
 
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/control', controlRoutes);
+app.use('/api/calidad-faret/operadores', calidadFaretOperadoresRoutes);
 app.use('/api/calidad-faret', calidadFaretRoutes);
+app.use('/api/calidad-faret-pallet', calidadFaretPalletRoutes);
+app.use('/api/orden-fabricacion', ordenFabricacionRoutes);
+app.use('/api/bobina', bobinaRoutes);
 
 app.listen(PORT, () => {
   console.log(`Servidor backend en puerto ${PORT}`);

@@ -113,16 +113,12 @@
                         "nombre": "B"
                     },
                     {
-                        "id": 2,
-                        "nombre": "C"
-                    },
-                    {
-                        "id": 3,
-                        "nombre": "D"
-                    },
-                    {
                         "id": 4,
                         "nombre": "Doble Corrugado"
+                    },
+                    {
+                        "id": 5,
+                        "nombre": "E"
                     }
                 ],
                 "materiales": [
@@ -350,16 +346,12 @@
                         "nombre": "B"
                     },
                     {
-                        "id": 2,
-                        "nombre": "C"
-                    },
-                    {
-                        "id": 3,
-                        "nombre": "D"
-                    },
-                    {
                         "id": 4,
                         "nombre": "Doble Corrugado"
+                    },
+                    {
+                        "id": 5,
+                        "nombre": "E"
                     }
                 ],
                 "materiales": [
@@ -541,7 +533,7 @@
                     {
                         "id": 106,
                         "proceso_id": 2,
-                        "nombre": "Descalce de pegado",
+                        "nombre": "Descuadre de pegado",
                         "criticidad": "critico"
                     },
                     {
@@ -803,7 +795,7 @@
                     {
                         "id": 106,
                         "proceso_id": 2,
-                        "nombre": "Descalce de pegado",
+                        "nombre": "Descuadre de pegado",
                         "criticidad": "critico"
                     },
                     {
@@ -1065,7 +1057,7 @@
                     {
                         "id": 106,
                         "proceso_id": 2,
-                        "nombre": "Descalce de pegado",
+                        "nombre": "Descuadre de pegado",
                         "criticidad": "critico"
                     },
                     {
@@ -1559,7 +1551,7 @@
                     {
                         "id": 120,
                         "proceso_id": 4,
-                        "nombre": "Descalce de pegado",
+                        "nombre": "Descuadre de pegado",
                         "criticidad": "critico"
                     },
                     {
@@ -1791,7 +1783,7 @@
                     {
                         "id": 120,
                         "proceso_id": 4,
-                        "nombre": "Descalce de pegado",
+                        "nombre": "Descuadre de pegado",
                         "criticidad": "critico"
                     },
                     {

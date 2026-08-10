@@ -1,15 +1,17 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../core/api/bobina_api.dart';
 import '../../../core/api/control_api.dart';
+import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
+import '../domain/bobina_qr_parser.dart';
 import '../domain/control_context.dart';
+import 'bobina_qr_scanner_page.dart';
 import 'control_measurements_page.dart';
-import 'product_qr_scanner_page.dart';
 
 class ControlFormPage extends StatefulWidget {
   final ControlContext controlContext;
@@ -25,10 +27,14 @@ class ControlFormPage extends StatefulWidget {
 
 class _ControlFormPageState extends State<ControlFormPage> {
   final ControlApi _controlApi = ControlApi();
+  final OrdenFabricacionApi _ordenFabricacionApi = OrdenFabricacionApi();
+  final BobinaApi _bobinaApi = BobinaApi();
   final PendingRecordsStore _pendingRecordsStore = PendingRecordsStore();
   final NetworkModeService _networkModeService = NetworkModeService();
   final TextEditingController _npController = TextEditingController();
   final TextEditingController _observationController = TextEditingController();
+  final TextEditingController _wasteQuantityController =
+      TextEditingController();
 
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -38,43 +44,181 @@ class _ControlFormPageState extends State<ControlFormPage> {
   bool _visualValidatedWithoutFailures = false;
   String? _selectedVisualControlResult;
   String? _selectedTipoOndaId;
+  bool _hasWaste = false;
+  String? _selectedWasteType;
   String? _productCode;
   String? _productDescription;
+  String? _cliente;
+  bool _buscandoOrden = false;
+  List<Map<String, dynamic>> _ordenItems = [];
+  String? _selectedOrdenItem;
+  final List<Map<String, dynamic>> _bobinasEscaneadas = [];
+  bool _resolviendoBobina = false;
 
   final List<String> _visualControlResults = [
     'Conforme',
     'No Conforme',
   ];
 
+  List<String> get _wasteTypes {
+    if (widget.controlContext.processId == 1) {
+      return [
+        'Insumos - Desponche de bobinas',
+        'Proceso - Merma por monotapa',
+      ];
+    }
+
+    return [
+      'Corrugado',
+      'Emplacado',
+      'Troquelado',
+      'Pegado',
+      'Termoformado',
+      'Producto Terminado',
+    ];
+  }
+
   @override
   void dispose() {
     _npController.dispose();
     _observationController.dispose();
+    _wasteQuantityController.dispose();
     super.dispose();
   }
 
-  Future<void> _scanProductCode() async {
-    final result = await Navigator.push<String>(
+  Future<void> _buscarItemsPorNp() async {
+    final np = _npController.text.trim();
+
+    if (np.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingrese el NP antes de buscar')),
+      );
+      return;
+    }
+
+    setState(() {
+      _buscandoOrden = true;
+    });
+
+    try {
+      final data = await _ordenFabricacionApi.obtenerOrdenFabricacion(
+        np,
+        proceso: widget.controlContext.processName,
+      );
+
+      if (!mounted) return;
+
+      final items = List<Map<String, dynamic>>.from(
+        (data['items'] as List?) ?? [],
+      );
+
+      setState(() {
+        _cliente = data['cliente']?.toString();
+        _ordenItems = items;
+        _selectedOrdenItem = null;
+      });
+
+      if (items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontraron ítems para este NP'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo consultar el NP. Puede continuar manualmente.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _buscandoOrden = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _escanearBobina() async {
+    if (_npController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingrese el NP antes de escanear la bobina'),
+        ),
+      );
+      return;
+    }
+
+    final code = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (_) => const ProductQrScannerPage(),
+        builder: (_) => const BobinaQrScannerPage(),
       ),
     );
 
-    if (result == null || result.trim().isEmpty) return;
+    if (code == null || code.trim().isEmpty) return;
 
-    try {
-      final data = jsonDecode(result);
+    final parsed = parseBobinaQr(code);
 
-      setState(() {
-        _productCode = data['codigo']?.toString();
-        _productDescription = data['descripcion']?.toString();
-      });
-    } catch (_) {
+    if (parsed.lote == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('QR de producto no válido')),
+        const SnackBar(
+          content: Text('No se pudo leer un lote válido en este QR'),
+        ),
       );
+      return;
     }
+
+    setState(() {
+      _resolviendoBobina = true;
+    });
+
+    Map<String, dynamic>? datosSap;
+    try {
+      datosSap = await _bobinaApi.resolverPorLote(parsed.lote!);
+    } catch (_) {
+      datosSap = null;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _resolviendoBobina = false;
+      _bobinasEscaneadas.add({
+        'lote': parsed.lote,
+        'docnum': parsed.docnum,
+        'pesoTarjaKg': parsed.tarjaKg,
+        'itemCode': datosSap?['itemCode'],
+        'itemName': datosSap?['itemName'],
+        'gramaje': datosSap?['gramaje'],
+        'medida': datosSap?['medida'],
+        'ubicacionBin': datosSap?['ubicacionBin'],
+        'observacion': null,
+        'escaneadoEn': DateTime.now().toIso8601String(),
+      });
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          datosSap == null
+              ? 'Bobina agregada. No se encontró en SAP — puede completar con una observación.'
+              : 'Bobina agregada correctamente',
+        ),
+      ),
+    );
+  }
+
+  void _quitarBobina(int index) {
+    setState(() {
+      _bobinasEscaneadas.removeAt(index);
+    });
   }
 
   void _toggleFailure(String parameterId) {
@@ -150,9 +294,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
       return;
     }
 
-    if (widget.controlContext.processId == 1 &&
-        widget.controlContext.operatorArea == 'PRODUCCION' &&
-        _selectedTipoOndaId == null) {
+    if (widget.controlContext.processId == 1 && _selectedTipoOndaId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Debe seleccionar tipo de onda')),
       );
@@ -178,6 +320,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'formularioId': widget.controlContext.formId,
         'area': widget.controlContext.operatorArea,
         'np': _npController.text.trim(),
+        'cliente': _cliente,
         'codigoProducto': _productCode,
         'descripcionProducto': _productDescription,
         'tipoOndaId': widget.controlContext.processId == 1
@@ -188,6 +331,12 @@ class _ControlFormPageState extends State<ControlFormPage> {
             _selectedVisualControlResult == 'Conforme' ? 'Cumple' : 'No Cumple',
         'observacion': _observationController.text.trim(),
         'fallasVisuales': [],
+        'bobinas': _bobinasEscaneadas,
+        'requiereMerma': _hasWaste,
+        'tipoMerma': _hasWaste ? _selectedWasteType : null,
+        'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
+            ? _wasteQuantityController.text
+            : null,
       };
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
@@ -253,7 +402,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
       return;
     }
 
-    if (widget.controlContext.operatorArea == 'PRODUCCION') {
+    if (widget.controlContext.operatorArea == 'PRODUCCION INNPACK') {
       final payload = {
         'usuarioId': widget.controlContext.userId,
         'procesoId': widget.controlContext.processId,
@@ -261,6 +410,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'formularioId': widget.controlContext.formId,
         'area': widget.controlContext.operatorArea,
         'np': _npController.text.trim(),
+        'cliente': _cliente,
         'codigoProducto': _productCode,
         'descripcionProducto': _productDescription,
         'tipoOndaId': widget.controlContext.processId == 1
@@ -279,6 +429,12 @@ class _ControlFormPageState extends State<ControlFormPage> {
               },
             )
             .toList(),
+        'bobinas': _bobinasEscaneadas,
+        'requiereMerma': _hasWaste,
+        'tipoMerma': _hasWaste ? _selectedWasteType : null,
+        'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
+            ? _wasteQuantityController.text
+            : null,
       };
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
@@ -355,6 +511,15 @@ class _ControlFormPageState extends State<ControlFormPage> {
           selectedFailures: _selectedFailures.toList(),
           visualValidatedWithoutFailures: false,
           observation: _observationController.text.trim(),
+          bobinas: _bobinasEscaneadas,
+          tipoOndaId: widget.controlContext.processId == 1
+              ? int.tryParse(_selectedTipoOndaId ?? '')
+              : null,
+          requiereMerma: _hasWaste,
+          tipoMerma: _hasWaste ? _selectedWasteType : null,
+          cantidadMerma: _hasWaste && _wasteQuantityController.text.isNotEmpty
+              ? _wasteQuantityController.text
+              : null,
         ),
       ),
     );
@@ -372,9 +537,12 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
     final String currentUser = widget.controlContext.userName;
     final bool isProduction =
-        widget.controlContext.operatorArea == 'PRODUCCION';
+        widget.controlContext.operatorArea == 'PRODUCCION INNPACK';
     const String currentShift = 'A';
     final bool isCorrugado = widget.controlContext.processId == 1;
+    final bool showBobinaSection = isCorrugado &&
+        (widget.controlContext.operatorArea == 'CALIDAD INNPACK' ||
+            widget.controlContext.operatorArea == 'PRODUCCION INNPACK');
 
     return Scaffold(
       backgroundColor: const Color(0xFF17212B),
@@ -506,9 +674,18 @@ class _ControlFormPageState extends State<ControlFormPage> {
                             ),
                             const SizedBox(height: 12),
                             OutlinedButton.icon(
-                              onPressed: _scanProductCode,
-                              icon: const Icon(Icons.qr_code_scanner),
-                              label: const Text('Escanear Código Producto'),
+                              onPressed:
+                                  _buscandoOrden ? null : _buscarItemsPorNp,
+                              icon: _buscandoOrden
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.search),
+                              label: const Text('Buscar ítems del NP'),
                               style: OutlinedButton.styleFrom(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 16),
@@ -520,6 +697,71 @@ class _ControlFormPageState extends State<ControlFormPage> {
                                 ),
                               ),
                             ),
+                            if (_cliente != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                'Cliente: $_cliente',
+                                style: const TextStyle(
+                                  color: Color(0xFFCFD8DC),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                            if (_ordenItems.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: _selectedOrdenItem,
+                                dropdownColor: const Color(0xFFEEF3F5),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Ítem del NP',
+                                  labelStyle: TextStyle(
+                                    color: Color(0xFFB0BEC5),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF546E7A),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF8BC34A),
+                                    ),
+                                  ),
+                                ),
+                                items: _ordenItems
+                                    .map(
+                                      (item) => DropdownMenuItem<String>(
+                                        value: item['codigo'].toString(),
+                                        child: Text(
+                                          '${item['codigo']} - ${item['nombre'] ?? ''}',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF263238),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  final item = _ordenItems.firstWhere(
+                                    (element) =>
+                                        element['codigo'].toString() == value,
+                                  );
+
+                                  setState(() {
+                                    _selectedOrdenItem = value;
+                                    _productCode = item['codigo']?.toString();
+                                    _productDescription =
+                                        item['nombre']?.toString();
+                                  });
+                                },
+                              ),
+                            ],
                             if (_productCode != null) ...[
                               const SizedBox(height: 12),
                               Text(
@@ -540,76 +782,175 @@ class _ControlFormPageState extends State<ControlFormPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (isCorrugado && isProduction) ...[
+                      if (showBobinaSection) ...[
                         _SectionCard(
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Corrugado',
+                                'Bobinas de papel utilizadas',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _selectedTipoOndaId,
-                                dropdownColor: const Color(0xFFEEF3F5),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                selectedItemBuilder: (context) {
-                                  return widget.controlContext.tiposOnda
-                                      .map((item) {
-                                    return Text(
-                                      item['nombre'].toString(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    );
-                                  }).toList();
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Tipo de onda',
-                                  labelStyle: TextStyle(
-                                    color: Color(0xFFB0BEC5),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF546E7A),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF8BC34A),
-                                    ),
-                                  ),
-                                ),
-                                items: widget.controlContext.tiposOnda
-                                    .map(
-                                      (item) => DropdownMenuItem<String>(
-                                        value: item['id'].toString(),
-                                        child: Text(
-                                          item['nombre'].toString(),
-                                          style: const TextStyle(
-                                            color: Color(0xFF263238),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedTipoOndaId = value;
-                                  });
-                                },
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Opcional. Escanee la tarja de cada bobina de papel utilizada en esta producción.',
+                                style: TextStyle(color: Color(0xFFB0BEC5)),
                               ),
                               const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed:
+                                    _resolviendoBobina ? null : _escanearBobina,
+                                icon: _resolviendoBobina
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.qr_code_scanner),
+                                label: const Text('Escanear bobina'),
+                                style: OutlinedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
+                                  foregroundColor: Colors.white,
+                                  side:
+                                      const BorderSide(color: Color(0xFF8BC34A)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                              ),
+                              if (_bobinasEscaneadas.isEmpty) ...[
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'No se han escaneado bobinas.',
+                                  style: TextStyle(color: Color(0xFFB0BEC5)),
+                                ),
+                              ] else ...[
+                                const SizedBox(height: 16),
+                                for (int i = 0; i < _bobinasEscaneadas.length; i++)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF17212B),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: const Color(0xFF37474F)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  'Lote ${_bobinasEscaneadas[i]['lote']}',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                              IconButton(
+                                                onPressed: () =>
+                                                    _quitarBobina(i),
+                                                icon: const Icon(
+                                                  Icons.close,
+                                                  color: Color(0xFFFFCC80),
+                                                ),
+                                                tooltip: 'Quitar',
+                                              ),
+                                            ],
+                                          ),
+                                          if (_bobinasEscaneadas[i]
+                                                  ['itemCode'] !=
+                                              null)
+                                            Text(
+                                              'Código: ${_bobinasEscaneadas[i]['itemCode']}',
+                                              style: const TextStyle(
+                                                color: Color(0xFFCFD8DC),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          if (_bobinasEscaneadas[i]
+                                                  ['itemName'] !=
+                                              null)
+                                            Text(
+                                              _bobinasEscaneadas[i]['itemName']
+                                                  .toString(),
+                                              style: const TextStyle(
+                                                color: Color(0xFFCFD8DC),
+                                              ),
+                                            ),
+                                          if (_bobinasEscaneadas[i]
+                                                      ['gramaje'] !=
+                                                  null ||
+                                              _bobinasEscaneadas[i]
+                                                      ['medida'] !=
+                                                  null)
+                                            Text(
+                                              [
+                                                if (_bobinasEscaneadas[i]
+                                                        ['gramaje'] !=
+                                                    null)
+                                                  'Gramaje: ${_bobinasEscaneadas[i]['gramaje']}',
+                                                if (_bobinasEscaneadas[i]
+                                                        ['medida'] !=
+                                                    null)
+                                                  'Medida: ${_bobinasEscaneadas[i]['medida']}',
+                                              ].join(' · '),
+                                              style: const TextStyle(
+                                                color: Color(0xFFCFD8DC),
+                                              ),
+                                            ),
+                                          const SizedBox(height: 8),
+                                          TextFormField(
+                                            initialValue: _bobinasEscaneadas[i]
+                                                    ['observacion']
+                                                ?.toString(),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 13,
+                                            ),
+                                            decoration: const InputDecoration(
+                                              labelText:
+                                                  'Observación (opcional)',
+                                              labelStyle: TextStyle(
+                                                color: Color(0xFFB0BEC5),
+                                                fontSize: 12,
+                                              ),
+                                              isDense: true,
+                                              enabledBorder:
+                                                  OutlineInputBorder(
+                                                borderSide: BorderSide(
+                                                  color: Color(0xFF546E7A),
+                                                ),
+                                              ),
+                                              focusedBorder:
+                                                  OutlineInputBorder(
+                                                borderSide: BorderSide(
+                                                  color: Color(0xFF8BC34A),
+                                                ),
+                                              ),
+                                            ),
+                                            onChanged: (value) {
+                                              _bobinasEscaneadas[i]
+                                                  ['observacion'] = value;
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ],
                           ),
                         ),
@@ -794,7 +1135,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const Text(
-                                'Evidencia opcional',
+                                'Evidencia fotográfica',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -860,6 +1201,189 @@ class _ControlFormPageState extends State<ControlFormPage> {
                           ),
                         ),
                       ],
+                      if (isCorrugado) ...[
+                        const SizedBox(height: 16),
+                        _SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'Corrugado',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: _selectedTipoOndaId,
+                                dropdownColor: const Color(0xFFEEF3F5),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                selectedItemBuilder: (context) {
+                                  return widget.controlContext.tiposOnda
+                                      .map((item) {
+                                    return Text(
+                                      item['nombre'].toString(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  }).toList();
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Tipo de onda',
+                                  labelStyle: TextStyle(
+                                    color: Color(0xFFB0BEC5),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF546E7A),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF8BC34A),
+                                    ),
+                                  ),
+                                ),
+                                items: widget.controlContext.tiposOnda
+                                    .map(
+                                      (item) => DropdownMenuItem<String>(
+                                        value: item['id'].toString(),
+                                        child: Text(
+                                          item['nombre'].toString(),
+                                          style: const TextStyle(
+                                            color: Color(0xFF263238),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedTipoOndaId = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      _SectionCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: const Color(0xFF8BC34A),
+                              title: const Text(
+                                'Registrar merma',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              value: _hasWaste,
+                              onChanged: (value) {
+                                setState(() {
+                                  _hasWaste = value;
+                                  if (!_hasWaste) {
+                                    _selectedWasteType = null;
+                                    _wasteQuantityController.clear();
+                                  }
+                                });
+                              },
+                            ),
+                            if (_hasWaste) ...[
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: _selectedWasteType,
+                                dropdownColor: const Color(0xFFEEF3F5),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                selectedItemBuilder: (context) {
+                                  return _wasteTypes.map((item) {
+                                    return Text(
+                                      item,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  }).toList();
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Tipo de merma',
+                                  labelStyle: TextStyle(
+                                    color: Color(0xFFB0BEC5),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF546E7A),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF8BC34A),
+                                    ),
+                                  ),
+                                ),
+                                items: _wasteTypes
+                                    .map(
+                                      (item) => DropdownMenuItem(
+                                        value: item,
+                                        child: Text(
+                                          item,
+                                          style: const TextStyle(
+                                            color: Color(0xFF263238),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedWasteType = value;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _wasteQuantityController,
+                                keyboardType: TextInputType.number,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: const InputDecoration(
+                                  labelText: 'Cantidad merma',
+                                  labelStyle: TextStyle(
+                                    color: Color(0xFFB0BEC5),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF546E7A),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF8BC34A),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 64,
@@ -874,7 +1398,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
                             ),
                           ),
                           child: Text(
-                            widget.controlContext.operatorArea == 'PRODUCCION'
+                            widget.controlContext.operatorArea ==
+                                    'PRODUCCION INNPACK'
                                 ? 'GUARDAR CONTROL'
                                 : 'SIGUIENTE',
                             style: const TextStyle(

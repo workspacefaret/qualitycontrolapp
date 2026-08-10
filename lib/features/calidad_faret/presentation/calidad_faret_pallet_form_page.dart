@@ -21,10 +21,13 @@ class _CalidadFaretPalletFormPageState
   final TextEditingController _fibraController = TextEditingController();
   final TextEditingController _numeroPalletController =
       TextEditingController();
+  final TextEditingController _observacionesController =
+      TextEditingController();
 
   String? _tipoMaterial;
   String? _selectedAreaControl;
   String? _selectedMaquina;
+  String? _numeroPasadasPrensa;
 
   bool _loadingPreguntas = true;
   bool _saving = false;
@@ -45,6 +48,7 @@ class _CalidadFaretPalletFormPageState
     _dimensionController.dispose();
     _fibraController.dispose();
     _numeroPalletController.dispose();
+    _observacionesController.dispose();
 
     for (final controller in _observacionControllers.values) {
       controller.dispose();
@@ -160,6 +164,12 @@ class _CalidadFaretPalletFormPageState
           ? null
           : _fibraController.text.trim(),
       'numeroPallet': _numeroPalletController.text.trim(),
+      'numeroPasadasPrensa': _numeroPasadasPrensa == null
+          ? null
+          : int.parse(_numeroPasadasPrensa!),
+      'observaciones': _observacionesController.text.trim().isEmpty
+          ? null
+          : _observacionesController.text.trim(),
       'areaControl': _selectedAreaControl,
       'operador': widget.operador,
       'maquina': _selectedMaquina,
@@ -565,6 +575,29 @@ class _CalidadFaretPalletFormPageState
                                         ),
                                         decoration: _fieldDecoration(
                                           'N° / identificación de pallet',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _dropdown(
+                                        label: 'N° de pasadas de prensa',
+                                        value: _numeroPasadasPrensa,
+                                        items: const ['1', '2', '3'],
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _numeroPasadasPrensa = value;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 16),
+                                      TextField(
+                                        controller: _observacionesController,
+                                        maxLines: 3,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                        decoration: _fieldDecoration(
+                                          'Observaciones',
+                                          hint: 'Opcional',
                                         ),
                                       ),
                                     ],

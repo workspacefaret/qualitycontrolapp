@@ -7,6 +7,11 @@ const router = express.Router();
 
 const {
     crearRegistroCalidadFaret,
+    listarRegistrosCalidadFaret,
+    obtenerResumenCalidadFaret,
+    obtenerResumenMaquinasCalidadFaret,
+    listarAdjuntosRegistroCalidadFaret,
+    eliminarRegistroCalidadFaret,
 } = require('../controllers/calidadFaret.controller');
 
 const uploadDir = path.join(__dirname, '../../uploads/calidad_faret');
@@ -34,5 +39,10 @@ const upload = multer({
 });
 
 router.post('/registros', upload.array('archivos', 5), crearRegistroCalidadFaret);
+router.get('/registros', listarRegistrosCalidadFaret);
+router.get('/resumen', obtenerResumenCalidadFaret);
+router.get('/maquinas/resumen', obtenerResumenMaquinasCalidadFaret);
+router.get('/registros/:id/adjuntos', listarAdjuntosRegistroCalidadFaret);
+router.delete('/registros/:id', eliminarRegistroCalidadFaret);
 
 module.exports = router;

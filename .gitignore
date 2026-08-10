@@ -31,6 +31,12 @@ Thumbs.db
 # OJO: si database.js tiene credenciales reales, NO subirlo
 backend/src/config/database.js
 
+# OJO: sqlServerPool.js lee credenciales de solo lectura al SQL Server de FPS_PRODUCCION
+backend/src/config/sqlServerPool.js
+
+# OJO: sqlServerPoolSap.js lee credenciales de solo lectura al SQL Server de SAP (INNPACK_PRODUCCION)
+backend/src/config/sqlServerPoolSap.js
+
 # =========================
 # Node / Backend
 # =========================
@@ -61,6 +67,9 @@ backend/pnpm-debug.log*
 # Builds
 build/
 **/build/
+
+# Copia local de staging del build web (generada por flutter build web, no es codigo fuente)
+deploy_web_qualitycontrol_root/
 
 # Symbolication / Obfuscation
 app.*.symbols

@@ -18,6 +18,7 @@ const crearRegistroCalidadFaret = async (req, res) => {
             nPasada,
             nItem,
             pliegoControlN,
+            observaciones,
             areaControl,
             operador,
             operadorOtro,
@@ -49,6 +50,7 @@ const crearRegistroCalidadFaret = async (req, res) => {
               n_pasada,
               n_item,
               pliego_control_n,
+              observaciones,
               area_control,
               operador,
               operador_otro,
@@ -61,7 +63,7 @@ const crearRegistroCalidadFaret = async (req, res) => {
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
             `,
             [
                 nvFaret,
@@ -70,6 +72,7 @@ const crearRegistroCalidadFaret = async (req, res) => {
                 nPasada || null,
                 nItem || null,
                 pliegoControlN || null,
+                observaciones || null,
                 areaControl,
                 operador,
                 operadorOtro || null,
@@ -166,9 +169,9 @@ const crearRegistroCalidadFaret = async (req, res) => {
 };
 
 const buildFiltros = (query) => {
-    const { fechaDesde, fechaHasta, areaControl, operador, maquina, presentaDefectos } = query;
+    const { fechaDesde, fechaHasta, areaControl, operador, maquina, presentaDefectos, nvFaret } = query;
 
-    const condiciones = [];
+    const condiciones = ['r.eliminado = 0'];
     const params = [];
 
     if (fechaDesde) {
@@ -184,6 +187,11 @@ const buildFiltros = (query) => {
     if (areaControl) {
         condiciones.push('r.area_control = ?');
         params.push(areaControl);
+    }
+
+    if (nvFaret) {
+        condiciones.push('r.nv_faret LIKE ?');
+        params.push(`%${nvFaret}%`);
     }
 
     if (operador) {
@@ -231,6 +239,7 @@ const listarRegistrosCalidadFaret = async (req, res) => {
               r.n_pasada AS nPasada,
               r.n_item AS nItem,
               r.pliego_control_n AS pliegoControlN,
+              r.observaciones,
               r.area_control AS areaControl,
               r.operador,
               r.operador_otro AS operadorOtro,
@@ -432,10 +441,39 @@ const listarAdjuntosRegistroCalidadFaret = async (req, res) => {
     }
 };
 
+const eliminarRegistroCalidadFaret = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [resultado] = await pool.query(
+            'UPDATE registros_calidad_faret SET eliminado = 1 WHERE id = ? AND eliminado = 0',
+            [id]
+        );
+
+        if (resultado.affectedRows === 0) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Registro no encontrado',
+            });
+        }
+
+        res.json({ ok: true, message: 'Registro eliminado correctamente', data: {} });
+    } catch (error) {
+        console.error('Error al eliminar registro calidad Faret:', error.message);
+
+        res.status(500).json({
+            ok: false,
+            message: 'Error al eliminar el registro',
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     crearRegistroCalidadFaret,
     listarRegistrosCalidadFaret,
     obtenerResumenCalidadFaret,
     obtenerResumenMaquinasCalidadFaret,
     listarAdjuntosRegistroCalidadFaret,
+    eliminarRegistroCalidadFaret,
 };

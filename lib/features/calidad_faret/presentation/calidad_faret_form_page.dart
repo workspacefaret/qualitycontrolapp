@@ -28,6 +28,8 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   final TextEditingController _nItemController = TextEditingController();
   final TextEditingController _pliegoControlNController =
       TextEditingController();
+  final TextEditingController _observacionesController =
+      TextEditingController();
   final TextEditingController _operadorOtroController =
       TextEditingController();
   final TextEditingController _accionCorrectivaController =
@@ -55,6 +57,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
     _nPasadaController.dispose();
     _nItemController.dispose();
     _pliegoControlNController.dispose();
+    _observacionesController.dispose();
     _operadorOtroController.dispose();
     _accionCorrectivaController.dispose();
     super.dispose();
@@ -210,6 +213,9 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
       'nPasada': _nPasadaController.text.trim(),
       'nItem': _nItemController.text.trim(),
       'pliegoControlN': _pliegoControlNController.text.trim(),
+      'observaciones': _observacionesController.text.trim().isEmpty
+          ? null
+          : _observacionesController.text.trim(),
       'areaControl': _selectedAreaControl,
       'operador': _selectedOperador,
       'operadorOtro': _selectedOperador == 'Otros'
@@ -491,6 +497,16 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                               style: const TextStyle(color: Colors.white),
                               decoration:
                                   _fieldDecoration('Pliego de control N°'),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _observacionesController,
+                              maxLines: 3,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: _fieldDecoration(
+                                'Observaciones',
+                                hint: 'Opcional',
+                              ),
                             ),
                           ],
                         ),

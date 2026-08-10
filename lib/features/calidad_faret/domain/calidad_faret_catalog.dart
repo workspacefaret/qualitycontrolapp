@@ -14,11 +14,10 @@ class CalidadFaretCatalog {
   static const Map<String, List<String>> operadoresPorArea = {
     '02-LAMINADO': ['ALAN ESCORCIA', 'LUIS SEPULVEDA', 'Otros'],
     '03-OFFSET': [
-      'ALEJANDRO YAÑEZ',
       'AXEL CRUZ',
       'DEDIER LEIVA',
       'EMERSON RAMIREZ',
-      'FREDY CAREAGA',
+      'GUILLERMO MORENO',
       'HERNAN VARGAS',
       'JUAN PAILLAMAN',
       'MANUEL PADILLA',
@@ -26,7 +25,6 @@ class CalidadFaretCatalog {
       'PEDRO CASTILLO',
       'RENIER CELIS',
       'ROLANDO PEÑA',
-      'SEBASTIAN VALENZUELA',
       'Otros',
     ],
     '04-SERIGRAFÍA': ['ALEJANDRO ALBORNOZ', 'Otros'],

@@ -1,14 +1,13 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/api/control_api.dart';
+import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
 import '../domain/control_context.dart';
-import 'product_qr_scanner_page.dart';
 
 class ControlMeasurementsPage extends StatefulWidget {
   final ControlContext controlContext;
@@ -16,6 +15,11 @@ class ControlMeasurementsPage extends StatefulWidget {
   final List<String> selectedFailures;
   final bool visualValidatedWithoutFailures;
   final String observation;
+  final List<Map<String, dynamic>> bobinas;
+  final int? tipoOndaId;
+  final bool requiereMerma;
+  final String? tipoMerma;
+  final String? cantidadMerma;
 
   const ControlMeasurementsPage({
     super.key,
@@ -24,6 +28,11 @@ class ControlMeasurementsPage extends StatefulWidget {
     required this.selectedFailures,
     required this.visualValidatedWithoutFailures,
     required this.observation,
+    this.bobinas = const [],
+    this.tipoOndaId,
+    this.requiereMerma = false,
+    this.tipoMerma,
+    this.cantidadMerma,
   });
 
   @override
@@ -33,63 +42,79 @@ class ControlMeasurementsPage extends StatefulWidget {
 
 class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   final ControlApi _controlApi = ControlApi();
+  final OrdenFabricacionApi _ordenFabricacionApi = OrdenFabricacionApi();
   final PendingRecordsStore _pendingRecordsStore = PendingRecordsStore();
   final NetworkModeService _networkModeService = NetworkModeService();
-  final TextEditingController _wasteQuantityController =
-      TextEditingController();
 
   final ImagePicker _imagePicker = ImagePicker();
 
   Uint8List? _selectedAttachmentBytes;
   String? _selectedAttachmentName;
 
-  String? _selectedWasteType;
-  String? _selectedTipoOndaId;
   String? _productCode;
   String? _productDescription;
+  String? _cliente;
+  bool _buscandoOrden = false;
+  List<Map<String, dynamic>> _ordenItems = [];
+  String? _selectedOrdenItem;
 
-  bool _hasWaste = false;
   bool _hasLabTest = false;
 
-  List<String> get _wasteTypes {
-    if (widget.controlContext.processId == 1) {
-      return [
-        'Insumos - Desponche de bobinas',
-        'Proceso - Merma por monotapa',
-      ];
+  Future<void> _buscarItemsPorNp() async {
+    final np = widget.np.trim();
+
+    if (np.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay NP para buscar')),
+      );
+      return;
     }
 
-    return [
-      'Corrugado',
-      'Emplacado',
-      'Troquelado',
-      'Pegado',
-      'Termoformado',
-      'Producto Terminado',
-    ];
-  }
-
-  Future<void> _scanProductCode() async {
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ProductQrScannerPage(),
-      ),
-    );
-
-    if (result == null || result.trim().isEmpty) return;
+    setState(() {
+      _buscandoOrden = true;
+    });
 
     try {
-      final data = jsonDecode(result);
+      final data = await _ordenFabricacionApi.obtenerOrdenFabricacion(
+        np,
+        proceso: widget.controlContext.processName,
+      );
+
+      if (!mounted) return;
+
+      final items = List<Map<String, dynamic>>.from(
+        (data['items'] as List?) ?? [],
+      );
 
       setState(() {
-        _productCode = data['codigo']?.toString();
-        _productDescription = data['descripcion']?.toString();
+        _cliente = data['cliente']?.toString();
+        _ordenItems = items;
+        _selectedOrdenItem = null;
       });
+
+      if (items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontraron ítems para este NP'),
+          ),
+        );
+      }
     } catch (_) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('QR de producto no válido')),
+        const SnackBar(
+          content: Text(
+            'No se pudo consultar el NP. Puede continuar manualmente.',
+          ),
+        ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _buscandoOrden = false;
+        });
+      }
     }
   }
 
@@ -135,13 +160,6 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   Future<void> _saveControl() async {
     final bool isNoConforme = !widget.visualValidatedWithoutFailures;
 
-    if (widget.controlContext.processId == 1 && _selectedTipoOndaId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar tipo de onda')),
-      );
-      return;
-    }
-
     const int actionId = 1;
 
     final payload = {
@@ -151,11 +169,10 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       'formularioId': widget.controlContext.formId,
       'area': widget.controlContext.operatorArea,
       'np': widget.np,
+      'cliente': _cliente,
       'codigoProducto': _productCode,
       'descripcionProducto': _productDescription,
-      'tipoOndaId': widget.controlContext.processId == 1
-          ? int.tryParse(_selectedTipoOndaId ?? '')
-          : null,
+      'tipoOndaId': widget.tipoOndaId,
       'turno': 'A',
       'resultadoVisual':
           widget.visualValidatedWithoutFailures ? 'Cumple' : 'No Cumple',
@@ -173,11 +190,10 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
           : [],
       'requiereEnsayoLaboratorio': _hasLabTest,
       'ensayosLaboratorio': [],
-      'requiereMerma': _hasWaste,
-      'tipoMerma': _hasWaste ? _selectedWasteType : null,
-      'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
-          ? _wasteQuantityController.text
-          : null,
+      'requiereMerma': widget.requiereMerma,
+      'tipoMerma': widget.tipoMerma,
+      'cantidadMerma': widget.cantidadMerma,
+      'bobinas': widget.bobinas,
     };
 
     final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
@@ -244,14 +260,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   }
 
   @override
-  void dispose() {
-    _wasteQuantityController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final bool isCorrugado = widget.controlContext.processId == 1;
     return Scaffold(
       backgroundColor: const Color(0xFF17212B),
       appBar: AppBar(
@@ -315,9 +324,18 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                             ),
                             const SizedBox(height: 12),
                             OutlinedButton.icon(
-                              onPressed: _scanProductCode,
-                              icon: const Icon(Icons.qr_code_scanner),
-                              label: const Text('Escanear Código Producto'),
+                              onPressed:
+                                  _buscandoOrden ? null : _buscarItemsPorNp,
+                              icon: _buscandoOrden
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.search),
+                              label: const Text('Buscar ítems del NP'),
                               style: OutlinedButton.styleFrom(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 16),
@@ -329,6 +347,71 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                                 ),
                               ),
                             ),
+                            if (_cliente != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                'Cliente: $_cliente',
+                                style: const TextStyle(
+                                  color: Color(0xFFCFD8DC),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                            if (_ordenItems.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: _selectedOrdenItem,
+                                dropdownColor: const Color(0xFFEEF3F5),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Ítem del NP',
+                                  labelStyle: TextStyle(
+                                    color: Color(0xFFB0BEC5),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF546E7A),
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: Color(0xFF8BC34A),
+                                    ),
+                                  ),
+                                ),
+                                items: _ordenItems
+                                    .map(
+                                      (item) => DropdownMenuItem<String>(
+                                        value: item['codigo'].toString(),
+                                        child: Text(
+                                          '${item['codigo']} - ${item['nombre'] ?? ''}',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: Color(0xFF263238),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  final item = _ordenItems.firstWhere(
+                                    (element) =>
+                                        element['codigo'].toString() == value,
+                                  );
+
+                                  setState(() {
+                                    _selectedOrdenItem = value;
+                                    _productCode = item['codigo']?.toString();
+                                    _productDescription =
+                                        item['nombre']?.toString();
+                                  });
+                                },
+                              ),
+                            ],
                             if (_productCode != null) ...[
                               const SizedBox(height: 12),
                               Text(
@@ -349,81 +432,6 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      if (isCorrugado) ...[
-                        _SectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'Corrugado',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _selectedTipoOndaId,
-                                dropdownColor: const Color(0xFFEEF3F5),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                selectedItemBuilder: (context) {
-                                  return widget.controlContext.tiposOnda
-                                      .map((item) {
-                                    return Text(
-                                      item['nombre'].toString(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    );
-                                  }).toList();
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Tipo de onda',
-                                  labelStyle: TextStyle(
-                                    color: Color(0xFFB0BEC5),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF546E7A),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF8BC34A),
-                                    ),
-                                  ),
-                                ),
-                                items: widget.controlContext.tiposOnda
-                                    .map(
-                                      (item) => DropdownMenuItem<String>(
-                                        value: item['id'].toString(),
-                                        child: Text(
-                                          item['nombre'].toString(),
-                                          style: const TextStyle(
-                                            color: Color(0xFF263238),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedTipoOndaId = value;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
                       const SizedBox(height: 16),
                       _SectionCard(
                         child: Column(
@@ -475,118 +483,8 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: const Color(0xFF8BC34A),
-                              title: const Text(
-                                'Registrar merma',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              value: _hasWaste,
-                              onChanged: (value) {
-                                setState(() {
-                                  _hasWaste = value;
-
-                                  if (!_hasWaste) {
-                                    _selectedWasteType = null;
-                                    _wasteQuantityController.clear();
-                                  }
-                                });
-                              },
-                            ),
-                            if (_hasWaste) ...[
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                value: _selectedWasteType,
-                                dropdownColor: const Color(0xFFEEF3F5),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                selectedItemBuilder: (context) {
-                                  return _wasteTypes.map((item) {
-                                    return Text(
-                                      item,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    );
-                                  }).toList();
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Tipo de merma',
-                                  labelStyle: TextStyle(
-                                    color: Color(0xFFB0BEC5),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF546E7A),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF8BC34A),
-                                    ),
-                                  ),
-                                ),
-                                items: _wasteTypes
-                                    .map(
-                                      (item) => DropdownMenuItem(
-                                        value: item,
-                                        child: Text(
-                                          item,
-                                          style: const TextStyle(
-                                            color: Color(0xFF263238),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedWasteType = value;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _wasteQuantityController,
-                                keyboardType: TextInputType.number,
-                                style: const TextStyle(color: Colors.white),
-                                decoration: const InputDecoration(
-                                  labelText: 'Cantidad merma',
-                                  labelStyle: TextStyle(
-                                    color: Color(0xFFB0BEC5),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF546E7A),
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderSide: BorderSide(
-                                      color: Color(0xFF8BC34A),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _SectionCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
                             const Text(
-                              'Evidencia opcional',
+                              'Evidencia fotográfica',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
