@@ -53,7 +53,9 @@ class _ProductoTerminadoFormPageState
   final TextEditingController _cantidadCajasBinsController =
       TextEditingController();
   final TextEditingController _palletIdController = TextEditingController();
-  final TextEditingController _maquinaController = TextEditingController();
+
+  List<Map<String, dynamic>> _maquinas = [];
+  String? _selectedMaquina;
 
   String? _procesoPt;
   String? _empresa;
@@ -77,13 +79,37 @@ class _ProductoTerminadoFormPageState
   bool _guardando = false;
 
   @override
+  void initState() {
+    super.initState();
+    _cargarMaquinas();
+  }
+
+  Future<void> _cargarMaquinas() async {
+    try {
+      final maquinas = await _catalogosApi.obtenerMaquinas();
+      if (!mounted) return;
+      setState(() => _maquinas = maquinas);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo cargar el catálogo de máquinas')),
+      );
+    }
+  }
+
+  List<Map<String, dynamic>> get _maquinasDelProceso {
+    if (_procesoPt == null) return [];
+    final procesoId = _procesoPt == 'Termoformado' ? 5 : 4;
+    return _maquinas.where((m) => m['proceso_id'] == procesoId).toList();
+  }
+
+  @override
   void dispose() {
     _npController.dispose();
     _cantidadLoteController.dispose();
     _cantidadPalletsController.dispose();
     _cantidadCajasBinsController.dispose();
     _palletIdController.dispose();
-    _maquinaController.dispose();
     for (final h in _hallazgos) {
       h.dispose();
     }
@@ -93,7 +119,7 @@ class _ProductoTerminadoFormPageState
   Future<void> _onProcesoPtChanged(String? value) async {
     setState(() {
       _procesoPt = value;
-      _maquinaController.clear();
+      _selectedMaquina = null;
       _parametrosVisuales = [];
       _origenesProblema = [];
       _cargandoCatalogoProceso = true;
@@ -424,9 +450,7 @@ class _ProductoTerminadoFormPageState
       'cantidadCajasBins': _procesoPt == 'Termoformado'
           ? int.tryParse(_cantidadCajasBinsController.text.trim())
           : null,
-      'maquina': _maquinaController.text.trim().isEmpty
-          ? null
-          : _maquinaController.text.trim(),
+      'maquina': _selectedMaquina,
       'turno': calcularTurno(DateTime.now()),
       'nivelInspeccion': _nivelInspeccion,
       'aql': _aql,
@@ -650,9 +674,19 @@ class _ProductoTerminadoFormPageState
                               }).toList(),
                             ),
                             const SizedBox(height: 12),
-                            _DarkTextField(
-                              controller: _maquinaController,
+                            _DarkDropdown<String>(
                               label: 'Máquina',
+                              value: _selectedMaquina,
+                              items: _maquinasDelProceso
+                                  .map(
+                                    (m) => DropdownMenuItem<String>(
+                                      value: m['nombre'].toString(),
+                                      child: Text(m['nombre'].toString()),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) =>
+                                  setState(() => _selectedMaquina = value),
                             ),
                             const SizedBox(height: 12),
                             _DarkTextField(
