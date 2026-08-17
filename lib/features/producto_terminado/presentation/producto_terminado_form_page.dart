@@ -56,6 +56,7 @@ class _ProductoTerminadoFormPageState
   final TextEditingController _maquinaController = TextEditingController();
 
   String? _procesoPt;
+  String? _empresa;
   String? _cliente;
   String? _productCode;
   String? _productDescription;
@@ -355,6 +356,11 @@ class _ProductoTerminadoFormPageState
       return;
     }
 
+    if (_empresa == null) {
+      _mostrarError('Debe seleccionar la Empresa (Faret/Innpack)');
+      return;
+    }
+
     if (_ordenItems.isNotEmpty && _productCode == null) {
       _mostrarError('Debe seleccionar el ítem del NP');
       return;
@@ -412,6 +418,7 @@ class _ProductoTerminadoFormPageState
       'codigoProducto': _productCode,
       'descripcionProducto': _productDescription,
       'procesoPt': _procesoPt,
+      'empresa': _empresa,
       'cantidadLote': cantidadLote,
       'cantidadPallets': int.tryParse(_cantidadPalletsController.text.trim()),
       'cantidadCajasBins': _procesoPt == 'Termoformado'
@@ -613,6 +620,34 @@ class _ProductoTerminadoFormPageState
                                 ),
                               ],
                               onChanged: _onProcesoPtChanged,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Empresa',
+                              style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 12),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              children: ['FARET', 'INNPACK'].map((empresa) {
+                                final selected = _empresa == empresa;
+                                return ChoiceChip(
+                                  label: Text(
+                                    empresa == 'FARET' ? 'Faret' : 'Innpack',
+                                  ),
+                                  selected: selected,
+                                  onSelected: (_) =>
+                                      setState(() => _empresa = empresa),
+                                  selectedColor: const Color(0xFF8BC34A),
+                                  backgroundColor: const Color(0xFFEEF3F5),
+                                  labelStyle: TextStyle(
+                                    color: selected
+                                        ? Colors.white
+                                        : const Color(0xFF263238),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                );
+                              }).toList(),
                             ),
                             const SizedBox(height: 12),
                             _DarkTextField(
@@ -1096,7 +1131,7 @@ class _DarkDropdown<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<T>(
       value: value,
-      dropdownColor: const Color(0xFFEEF3F5),
+      dropdownColor: const Color(0xFF1F2A33),
       isExpanded: true,
       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
       decoration: InputDecoration(

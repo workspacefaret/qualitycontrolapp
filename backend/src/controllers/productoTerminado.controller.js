@@ -18,6 +18,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
             codigoProducto,
             descripcionProducto,
             procesoPt,
+            empresa,
             cantidadLote,
             cantidadPallets,
             cantidadCajasBins,
@@ -38,6 +39,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
         if (
             !usuarioId ||
             !procesoPt ||
+            !empresa ||
             !cantidadLote ||
             !turno ||
             !nivelInspeccion ||
@@ -76,6 +78,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
               codigo_producto,
               descripcion_producto,
               proceso_pt,
+              empresa,
               cantidad_lote,
               cantidad_pallets,
               cantidad_cajas_bins,
@@ -94,7 +97,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
             `,
             [
                 usuarioId,
@@ -103,6 +106,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
                 codigoProducto || null,
                 descripcionProducto || null,
                 procesoPt,
+                empresa,
                 cantidadLote,
                 cantidadPallets || null,
                 cantidadCajasBins || null,
@@ -246,7 +250,7 @@ const listarRegistrosProductoTerminado = async (req, res) => {
             `
             SELECT
               r.id, r.np, r.cliente, r.codigo_producto, r.descripcion_producto,
-              r.proceso_pt, r.cantidad_lote, r.cantidad_pallets, r.cantidad_cajas_bins,
+              r.proceso_pt, r.empresa, r.cantidad_lote, r.cantidad_pallets, r.cantidad_cajas_bins,
               r.maquina, r.turno, r.nivel_inspeccion, r.aql, r.letra_codigo,
               r.tamano_muestra, r.ac, r.re, r.inspeccion_100, r.unidades_nc,
               r.defectos_totales, r.resultado, r.fecha_registro, r.hora_registro,
