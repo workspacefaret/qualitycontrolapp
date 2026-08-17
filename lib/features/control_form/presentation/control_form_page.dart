@@ -8,6 +8,7 @@ import '../../../core/api/control_api.dart';
 import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
+import '../../../core/utils/turno_calculator.dart';
 import '../domain/bobina_qr_parser.dart';
 import '../domain/control_context.dart';
 import 'bobina_qr_scanner_page.dart';
@@ -43,6 +44,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
   final Set<String> _selectedFailures = {};
   bool _visualValidatedWithoutFailures = false;
   String? _selectedVisualControlResult;
+  String? _selectedOrigenId;
   String? _selectedTipoOndaId;
   bool _hasWaste = false;
   String? _selectedWasteType;
@@ -115,7 +117,21 @@ class _ControlFormPageState extends State<ControlFormPage> {
       setState(() {
         _cliente = data['cliente']?.toString();
         _ordenItems = items;
-        _selectedOrdenItem = null;
+
+        // Si el NP trae un único ítem (el caso más común), se autoselecciona:
+        // el operador ya no necesita abrir el dropdown para que
+        // codigoProducto/descripcionProducto queden asignados antes de
+        // guardar. Con 2+ ítems se mantiene el comportamiento actual
+        // (selección manual obligatoria).
+        if (items.length == 1) {
+          _selectedOrdenItem = items.first['codigo']?.toString();
+          _productCode = items.first['codigo']?.toString();
+          _productDescription = items.first['nombre']?.toString();
+        } else {
+          _selectedOrdenItem = null;
+          _productCode = null;
+          _productDescription = null;
+        }
       });
 
       if (items.isEmpty) {
@@ -240,6 +256,16 @@ class _ControlFormPageState extends State<ControlFormPage> {
     });
   }
 
+  bool _faltaObservacionPorOtro() {
+    final seleccionoOtro = widget.controlContext.parametrosVisuales.any(
+      (parametro) =>
+          _selectedFailures.contains(parametro['id'].toString()) &&
+          parametro['nombre'].toString().startsWith('Otro'),
+    );
+
+    return seleccionoOtro && _observationController.text.trim().isEmpty;
+  }
+
   Future<void> _takePhoto() async {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
@@ -309,6 +335,19 @@ class _ControlFormPageState extends State<ControlFormPage> {
       return;
     }
 
+    // Red de seguridad: si la búsqueda por NP trajo ítems pero el operador
+    // nunca seleccionó uno (ni se autoseleccionó por ser un único ítem),
+    // no se permite continuar sin código/descripción de producto — evita
+    // que se guarde codigoProducto/descripcionProducto en null.
+    if (_ordenItems.isNotEmpty && _productCode == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar el ítem del NP antes de guardar'),
+        ),
+      );
+      return;
+    }
+
     if (_selectedVisualControlResult == 'Conforme') {
       _selectedFailures.clear();
       _visualValidatedWithoutFailures = true;
@@ -326,11 +365,12 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'tipoOndaId': widget.controlContext.processId == 1
             ? int.tryParse(_selectedTipoOndaId ?? '')
             : null,
-        'turno': 'A',
+        'turno': calcularTurno(DateTime.now()),
         'resultadoVisual':
             _selectedVisualControlResult == 'Conforme' ? 'Cumple' : 'No Cumple',
         'observacion': _observationController.text.trim(),
         'fallasVisuales': [],
+        'origenId': null,
         'bobinas': _bobinasEscaneadas,
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
@@ -403,6 +443,30 @@ class _ControlFormPageState extends State<ControlFormPage> {
     }
 
     if (widget.controlContext.operatorArea == 'PRODUCCION INNPACK') {
+      if (widget.controlContext.processId == 7 &&
+          _selectedVisualControlResult == 'No Conforme' &&
+          _selectedAttachmentBytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Debe adjuntar una foto cuando el resultado es No Conforme',
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (widget.controlContext.processId == 7 && _faltaObservacionPorOtro()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Debe ingresar una observación al seleccionar "Otro"',
+            ),
+          ),
+        );
+        return;
+      }
+
       final payload = {
         'usuarioId': widget.controlContext.userId,
         'procesoId': widget.controlContext.processId,
@@ -416,7 +480,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'tipoOndaId': widget.controlContext.processId == 1
             ? int.tryParse(_selectedTipoOndaId ?? '')
             : null,
-        'turno': 'A',
+        'turno': calcularTurno(DateTime.now()),
         'resultadoVisual':
             _selectedVisualControlResult == 'Conforme' ? 'Cumple' : 'No Cumple',
         'observacion': _observationController.text.trim(),
@@ -429,6 +493,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
               },
             )
             .toList(),
+        'origenId':
+            _selectedOrigenId != null ? int.tryParse(_selectedOrigenId!) : null,
         'bobinas': _bobinasEscaneadas,
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
@@ -520,6 +586,10 @@ class _ControlFormPageState extends State<ControlFormPage> {
           cantidadMerma: _hasWaste && _wasteQuantityController.text.isNotEmpty
               ? _wasteQuantityController.text
               : null,
+          cliente: _cliente,
+          productCode: _productCode,
+          productDescription: _productDescription,
+          origenId: _selectedOrigenId,
         ),
       ),
     );
@@ -538,7 +608,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
     final String currentUser = widget.controlContext.userName;
     final bool isProduction =
         widget.controlContext.operatorArea == 'PRODUCCION INNPACK';
-    const String currentShift = 'A';
+    final String currentShift = calcularTurno(now);
     final bool isCorrugado = widget.controlContext.processId == 1;
     final bool showBobinaSection = isCorrugado &&
         (widget.controlContext.operatorArea == 'CALIDAD INNPACK' ||
@@ -1108,6 +1178,80 @@ class _ControlFormPageState extends State<ControlFormPage> {
                           ),
                         ),
                         const SizedBox(height: 16),
+                        if (widget.controlContext.origenesProblema
+                            .isNotEmpty) ...[
+                          _SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Text(
+                                  'Origen del problema',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<String>(
+                                  value: _selectedOrigenId,
+                                  dropdownColor: const Color(0xFFEEF3F5),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  selectedItemBuilder: (context) {
+                                    return widget
+                                        .controlContext.origenesProblema
+                                        .map((item) {
+                                      return Text(
+                                        item['nombre'].toString(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      );
+                                    }).toList();
+                                  },
+                                  decoration: const InputDecoration(
+                                    labelText: 'Origen',
+                                    labelStyle:
+                                        TextStyle(color: Color(0xFFB0BEC5)),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderSide:
+                                          BorderSide(color: Color(0xFF546E7A)),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderSide:
+                                          BorderSide(color: Color(0xFF8BC34A)),
+                                    ),
+                                  ),
+                                  items: widget
+                                      .controlContext.origenesProblema
+                                      .map(
+                                        (item) => DropdownMenuItem<String>(
+                                          value: item['id'].toString(),
+                                          child: Text(
+                                            item['nombre'].toString(),
+                                            style: const TextStyle(
+                                              color: Color(0xFF263238),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedOrigenId = value;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                       ],
                       _SectionCard(
                         child: TextField(
@@ -1144,7 +1288,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
                               ),
                               const SizedBox(height: 8),
                               const Text(
-                                'Puede adjuntar una foto o archivo PDF/JPG/PNG.',
+                                'Adjunte foto o archivo PDF/JPG/PNG. Obligatoria si el resultado es No Conforme.',
                                 style: TextStyle(color: Color(0xFFB0BEC5)),
                               ),
                               const SizedBox(height: 12),

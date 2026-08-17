@@ -12,6 +12,7 @@ const calidadFaretPalletRoutes = require('./src/routes/calidadFaretPallet.routes
 const calidadFaretOperadoresRoutes = require('./src/routes/calidadFaretOperadores.routes');
 const ordenFabricacionRoutes = require('./src/routes/ordenFabricacion.routes');
 const bobinaRoutes = require('./src/routes/bobina.routes');
+const productoTerminadoRoutes = require('./src/routes/productoTerminado.routes');
 
 const app = express();
 
@@ -75,6 +76,7 @@ app.use('/api/calidad-faret', calidadFaretRoutes);
 app.use('/api/calidad-faret-pallet', calidadFaretPalletRoutes);
 app.use('/api/orden-fabricacion', ordenFabricacionRoutes);
 app.use('/api/bobina', bobinaRoutes);
+app.use('/api/producto-terminado', productoTerminadoRoutes);
 
 app.listen(PORT, () => {
   console.log(`Servidor backend en puerto ${PORT}`);

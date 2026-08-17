@@ -88,11 +88,26 @@ const getContextoPorQr = async (req, res) => {
             `
         );
 
+        const [origenesProblema] = await pool.query(
+            `
+            SELECT
+              id,
+              proceso_id,
+              nombre
+            FROM origenes_problema
+            WHERE activo = 1
+              AND proceso_id = ?
+            ORDER BY nombre ASC
+            `,
+            [contexto.processId]
+        );
+
         res.json({
             ok: true,
             data: {
                 ...contexto,
                 parametrosVisuales,
+                origenesProblema,
                 tiposOnda: contexto.processId === 1 ? tiposOnda : [],
                 materiales,
                 ensayosLaboratorio,
@@ -145,6 +160,7 @@ const crearRegistroControl = async (req, res) => {
             fallasVisuales,
             ensayosLaboratorio,
             bobinas,
+            origenId,
         } = body;
 
         if (!usuarioId || !procesoId || !maquinaId || !turno || !resultadoVisual) {
@@ -199,10 +215,11 @@ const crearRegistroControl = async (req, res) => {
               requiere_merma,
               tipo_merma,
               cantidad_merma,
+              origen_id,
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
             `,
             [
                 usuarioId,
@@ -224,6 +241,7 @@ const crearRegistroControl = async (req, res) => {
                 requiereMerma ? 1 : 0,
                 tipoMerma || null,
                 cantidadMerma || null,
+                origenId || null,
             ]
         );
 

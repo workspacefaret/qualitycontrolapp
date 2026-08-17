@@ -7,6 +7,7 @@ import '../../../core/api/control_api.dart';
 import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
+import '../../../core/utils/turno_calculator.dart';
 import '../domain/control_context.dart';
 
 class ControlMeasurementsPage extends StatefulWidget {
@@ -20,6 +21,10 @@ class ControlMeasurementsPage extends StatefulWidget {
   final bool requiereMerma;
   final String? tipoMerma;
   final String? cantidadMerma;
+  final String? cliente;
+  final String? productCode;
+  final String? productDescription;
+  final String? origenId;
 
   const ControlMeasurementsPage({
     super.key,
@@ -33,6 +38,10 @@ class ControlMeasurementsPage extends StatefulWidget {
     this.requiereMerma = false,
     this.tipoMerma,
     this.cantidadMerma,
+    this.cliente,
+    this.productCode,
+    this.productDescription,
+    this.origenId,
   });
 
   @override
@@ -59,6 +68,20 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   String? _selectedOrdenItem;
 
   bool _hasLabTest = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Si el producto ya fue buscado/seleccionado en la pantalla anterior
+    // (ControlFormPage), se reutiliza acá para no obligar al operador a
+    // repetir la búsqueda por NP. Si no vino nada (o quiere cambiarlo),
+    // sigue disponible el botón "Buscar" de esta misma pantalla.
+    _cliente = widget.cliente;
+    _productCode = widget.productCode;
+    _productDescription = widget.productDescription;
+    _selectedOrdenItem = widget.productCode;
+  }
 
   Future<void> _buscarItemsPorNp() async {
     final np = widget.np.trim();
@@ -89,7 +112,18 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       setState(() {
         _cliente = data['cliente']?.toString();
         _ordenItems = items;
-        _selectedOrdenItem = null;
+
+        // Mismo criterio que ControlFormPage: con un único ítem se
+        // autoselecciona; con 2+ requiere selección manual del operador.
+        if (items.length == 1) {
+          _selectedOrdenItem = items.first['codigo']?.toString();
+          _productCode = items.first['codigo']?.toString();
+          _productDescription = items.first['nombre']?.toString();
+        } else {
+          _selectedOrdenItem = null;
+          _productCode = null;
+          _productDescription = null;
+        }
       });
 
       if (items.isEmpty) {
@@ -158,7 +192,51 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   }
 
   Future<void> _saveControl() async {
+    // Red de seguridad: si hay ítems de la búsqueda por NP pero ninguno
+    // quedó seleccionado, no se permite guardar con codigoProducto/
+    // descripcionProducto en null.
+    if (_ordenItems.isNotEmpty && _productCode == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe seleccionar el ítem del NP antes de guardar'),
+        ),
+      );
+      return;
+    }
+
     final bool isNoConforme = !widget.visualValidatedWithoutFailures;
+
+    if (widget.controlContext.processId == 7 &&
+        isNoConforme &&
+        _selectedAttachmentBytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Debe adjuntar una foto cuando el resultado es No Conforme',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (widget.controlContext.processId == 7 && isNoConforme) {
+      final seleccionoOtro = widget.controlContext.parametrosVisuales.any(
+        (parametro) =>
+            widget.selectedFailures.contains(parametro['id'].toString()) &&
+            parametro['nombre'].toString().startsWith('Otro'),
+      );
+
+      if (seleccionoOtro && widget.observation.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Debe ingresar una observación al seleccionar "Otro"',
+            ),
+          ),
+        );
+        return;
+      }
+    }
 
     const int actionId = 1;
 
@@ -173,7 +251,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       'codigoProducto': _productCode,
       'descripcionProducto': _productDescription,
       'tipoOndaId': widget.tipoOndaId,
-      'turno': 'A',
+      'turno': calcularTurno(DateTime.now()),
       'resultadoVisual':
           widget.visualValidatedWithoutFailures ? 'Cumple' : 'No Cumple',
       'observacion': widget.observation,
@@ -193,6 +271,8 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       'requiereMerma': widget.requiereMerma,
       'tipoMerma': widget.tipoMerma,
       'cantidadMerma': widget.cantidadMerma,
+      'origenId':
+          widget.origenId != null ? int.tryParse(widget.origenId!) : null,
       'bobinas': widget.bobinas,
     };
 
@@ -493,7 +573,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'Puede adjuntar una foto o archivo PDF/JPG/PNG.',
+                              'Adjunte foto o archivo PDF/JPG/PNG. Obligatoria si el resultado es No Conforme.',
                               style: TextStyle(color: Color(0xFFB0BEC5)),
                             ),
                             const SizedBox(height: 12),

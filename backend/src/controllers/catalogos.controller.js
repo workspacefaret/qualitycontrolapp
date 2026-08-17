@@ -117,6 +117,38 @@ const getParametrosVisuales = async (req, res) => {
         });
     }
 };
+const getOrigenesProblema = async (req, res) => {
+    try {
+        const { procesoId } = req.params;
+
+        const [rows] = await pool.query(
+            `
+        SELECT
+          id,
+          proceso_id,
+          nombre
+        FROM origenes_problema
+        WHERE activo = 1
+          AND proceso_id = ?
+        ORDER BY nombre ASC
+        `,
+            [procesoId]
+        );
+
+        res.json({
+            ok: true,
+            data: rows,
+        });
+    } catch (error) {
+        console.error('Error origenes problema:', error.message);
+
+        res.status(500).json({
+            ok: false,
+            message: 'Error al obtener orígenes del problema',
+            error: error.message,
+        });
+    }
+};
 const getCatalogoOffline = async (req, res) => {
     try {
         const [usuarios] = await pool.query(`
@@ -190,11 +222,25 @@ const getCatalogoOffline = async (req, res) => {
   ORDER BY nombre ASC
 `);
 
+        const [origenesProblema] = await pool.query(`
+  SELECT
+    id,
+    proceso_id,
+    nombre
+  FROM origenes_problema
+  WHERE activo = 1
+  ORDER BY proceso_id ASC, nombre ASC
+`);
+
         const qrContexts = contextos.map((contexto) => ({
             ...contexto,
 
             parametrosVisuales: parametrosVisuales.filter(
                 (parametro) => parametro.proceso_id === contexto.processId
+            ),
+
+            origenesProblema: origenesProblema.filter(
+                (origen) => origen.proceso_id === contexto.processId
             ),
 
             tiposOnda:
@@ -233,5 +279,6 @@ module.exports = {
     getProcesos,
     getMaquinas,
     getParametrosVisuales,
+    getOrigenesProblema,
     getCatalogoOffline,
 };

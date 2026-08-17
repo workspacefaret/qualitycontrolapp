@@ -7,6 +7,7 @@ import '../control_form/presentation/control_form_page.dart';
 import '../control_form/presentation/qr_scanner_page.dart';
 import '../calidad_faret/presentation/calidad_faret_form_page.dart';
 import '../calidad_faret/presentation/calidad_faret_pallet_form_page.dart';
+import '../producto_terminado/presentation/producto_terminado_form_page.dart';
 import '../../core/api/calidad_faret_operadores_api.dart';
 import '../../core/local/cached_users_store.dart';
 import '../../core/local/offline_catalog_store.dart';
@@ -40,11 +41,13 @@ class _HomePageState extends State<HomePage> {
     'PRODUCCION INNPACK',
     'CALIDAD/PRODUCCION FARET',
     'CONTROL PALLET / PAPEL FARET',
+    'PRODUCTO TERMINADO',
   ];
 
   bool get _isCalidadFaret => _selectedArea == 'CALIDAD/PRODUCCION FARET';
   bool get _isControlPalletPapelFaret =>
       _selectedArea == 'CONTROL PALLET / PAPEL FARET';
+  bool get _isProductoTerminado => _selectedArea == 'PRODUCTO TERMINADO';
   final CatalogosApi _catalogosApi = CatalogosApi();
   final CalidadFaretOperadoresApi _calidadFaretOperadoresApi =
       CalidadFaretOperadoresApi();
@@ -269,6 +272,25 @@ class _HomePageState extends State<HomePage> {
     await _loadFaretOperadores();
   }
 
+  Future<void> _openProductoTerminado(BuildContext context) async {
+    if (_selectedOperator == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar operador')),
+      );
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProductoTerminadoFormPage(
+          usuarioId: _selectedOperator!['id'] as int,
+          usuarioNombre: _selectedOperator!['nombre_completo'].toString(),
+        ),
+      ),
+    );
+  }
+
   Future<void> _startQrScanner(BuildContext context) async {
     if (_selectedArea == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -359,6 +381,9 @@ class _HomePageState extends State<HomePage> {
         ),
         ensayosLaboratorio: List<Map<String, dynamic>>.from(
           qrContext['ensayosLaboratorio'] ?? [],
+        ),
+        origenesProblema: List<Map<String, dynamic>>.from(
+          qrContext['origenesProblema'] ?? [],
         ),
       );
 
@@ -632,17 +657,23 @@ class _HomePageState extends State<HomePage> {
                               _openCalidadFaret(context);
                             } else if (_isControlPalletPapelFaret) {
                               _openControlPalletPapelFaret(context);
+                            } else if (_isProductoTerminado) {
+                              _openProductoTerminado(context);
                             } else {
                               _startQrScanner(context);
                             }
                           },
                           icon: Icon(
-                            (_isCalidadFaret || _isControlPalletPapelFaret)
+                            (_isCalidadFaret ||
+                                    _isControlPalletPapelFaret ||
+                                    _isProductoTerminado)
                                 ? Icons.assignment
                                 : Icons.qr_code_scanner,
                           ),
                           label: Text(
-                            (_isCalidadFaret || _isControlPalletPapelFaret)
+                            (_isCalidadFaret ||
+                                    _isControlPalletPapelFaret ||
+                                    _isProductoTerminado)
                                 ? 'ABRIR FORMULARIO'
                                 : 'ESCANEAR QR',
                             style: const TextStyle(
