@@ -19,6 +19,13 @@ import 'package:web/web.dart' as web;
 /// jsQR con el mismo patrón de captura (canvas a resolución nativa del
 /// video) y sí funciona en ambas orientaciones, así que se replica aquí
 /// exclusivamente para este escáner.
+///
+/// Además, igual que `consumo_papel/public/qr_scan.js`, complementa jsQR con
+/// `@zxing/browser` para códigos de barra 1D (code128/39/codabar/itf/
+/// ean13/ean8/upcA/upcE): jsQR solo decodifica QR, así que sin esto un
+/// código de barra 1D nunca se detecta en el escáner Web de bobina (el
+/// escáner nativo Android/iOS en `bobina_qr_scanner_page.dart` ya soporta
+/// esos formatos vía `mobile_scanner`, este es el único hueco).
 @JS('jsQR')
 external _JsQrResult? _jsQr(JSUint8ClampedArray data, int width, int height);
 
@@ -38,6 +45,18 @@ class BobinaWebQrReaderView extends StatefulWidget {
 class _BobinaWebQrReaderViewState extends State<BobinaWebQrReaderView> {
   static const _jsQrScriptUrl = 'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js';
   static bool _jsQrScriptRequested = false;
+  static const _zxingScriptUrl = 'https://unpkg.com/@zxing/browser@0.2.1';
+  static bool _zxingScriptRequested = false;
+  static const _zxingBarcodeFormatNames = [
+    'CODE_128',
+    'CODE_39',
+    'CODABAR',
+    'ITF',
+    'EAN_13',
+    'EAN_8',
+    'UPC_A',
+    'UPC_E',
+  ];
   static int _instanceCounter = 0;
 
   late final String _viewType;
@@ -48,6 +67,8 @@ class _BobinaWebQrReaderViewState extends State<BobinaWebQrReaderView> {
   bool _detected = false;
   bool _running = false;
   String? _errorMessage;
+  int _barcodeFrameCounter = 0;
+  JSObject? _zxingReader;
 
   @override
   void initState() {
@@ -76,6 +97,11 @@ class _BobinaWebQrReaderViewState extends State<BobinaWebQrReaderView> {
       (int _) => container,
     );
 
+    // Se pide de inmediato y sin esperar: es un respaldo (código de barra
+    // 1D), no debe retrasar el arranque de la cámara ni el QR, que sigue
+    // siendo el camino principal.
+    _ensureZxingScriptRequested();
+
     unawaited(_start());
   }
 
@@ -97,6 +123,62 @@ class _BobinaWebQrReaderViewState extends State<BobinaWebQrReaderView> {
         throw Exception('No se pudo cargar la librería jsQR (unpkg.com)');
       }
       await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  void _ensureZxingScriptRequested() {
+    if (_zxingScriptRequested) return;
+    _zxingScriptRequested = true;
+    final script = web.HTMLScriptElement()..src = _zxingScriptUrl;
+    web.document.head!.append(script);
+  }
+
+  /// Crea (una sola vez) el `BrowserMultiFormatReader` de `@zxing/browser`
+  /// restringido a los mismos 8 formatos 1D que ya usa `consumo_papel` y el
+  /// escáner nativo de bobina (`bobina_qr_scanner_page.dart`). Devuelve
+  /// `null` mientras el script todavía no termina de cargar desde el CDN.
+  JSObject? _getOrCreateZxingReader() {
+    final cached = _zxingReader;
+    if (cached != null) return cached;
+
+    if (!web.window.has('ZXingBrowser')) return null;
+    final ns = web.window.getProperty<JSObject>('ZXingBrowser'.toJS);
+
+    if (!ns.has('BrowserMultiFormatReader')) return null;
+    final readerCtor = ns.getProperty<JSFunction>(
+      'BrowserMultiFormatReader'.toJS,
+    );
+
+    final reader = readerCtor.callAsConstructor<JSObject>();
+
+    if (ns.has('BarcodeFormat')) {
+      final barcodeFormatNs = ns.getProperty<JSObject>('BarcodeFormat'.toJS);
+      final formats = _zxingBarcodeFormatNames
+          .map((name) => barcodeFormatNs.getProperty<JSAny?>(name.toJS))
+          .whereType<JSAny>()
+          .toList()
+          .toJS;
+      reader.setProperty('possibleFormats'.toJS, formats);
+    }
+
+    _zxingReader = reader;
+    return reader;
+  }
+
+  /// Igual que `decodeBarcode()` en `consumo_papel/public/qr_scan.js`: si el
+  /// frame no trae un código de barra legible, `decodeFromCanvas` lanza una
+  /// excepción JS (comportamiento normal de ZXing) — no significa error.
+  String? _decodeBarcode(JSObject reader, web.HTMLCanvasElement canvas) {
+    try {
+      final result = reader.callMethod<JSObject?>(
+        'decodeFromCanvas'.toJS,
+        canvas,
+      );
+      if (result == null) return null;
+      final text = result.callMethod<JSString?>('getText'.toJS);
+      return text?.toDart;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -158,6 +240,24 @@ class _BobinaWebQrReaderViewState extends State<BobinaWebQrReaderView> {
         _stopCamera();
         widget.onDetect(result.data.trim());
         return;
+      }
+
+      // Código de barras 1D (complementa al QR, igual que en
+      // consumo_papel/public/qr_scan.js): se intenta cada 3 frames porque
+      // decodeFromCanvas es más costoso que jsQR, y solo cuando el frame no
+      // trajo un QR.
+      _barcodeFrameCounter++;
+      if (_barcodeFrameCounter % 3 == 0) {
+        final reader = _getOrCreateZxingReader();
+        if (reader != null) {
+          final barcodeText = _decodeBarcode(reader, _canvas);
+          if (barcodeText != null && barcodeText.trim().isNotEmpty) {
+            _detected = true;
+            _stopCamera();
+            widget.onDetect(barcodeText.trim());
+            return;
+          }
+        }
       }
     }
 

@@ -782,10 +782,24 @@ class _ControlFormPageState extends State<ControlFormPage> {
                               DropdownButtonFormField<String>(
                                 value: _selectedOrdenItem,
                                 dropdownColor: const Color(0xFFEEF3F5),
+                                isExpanded: true,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
                                 ),
+                                selectedItemBuilder: (context) {
+                                  return _ordenItems.map((item) {
+                                    return Text(
+                                      '${item['codigo']} - ${item['nombre'] ?? ''}',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  }).toList();
+                                },
                                 decoration: const InputDecoration(
                                   labelText: 'Ítem del NP',
                                   labelStyle: TextStyle(
@@ -809,6 +823,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
                                         child: Text(
                                           '${item['codigo']} - ${item['nombre'] ?? ''}',
                                           overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
                                           style: const TextStyle(
                                             color: Color(0xFF263238),
                                             fontWeight: FontWeight.w600,
