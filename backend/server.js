@@ -3,7 +3,7 @@ const cors = require('cors');
 
 require('dotenv').config();
 
-const pool = require('./src/config/database');
+const { getCalidadSqlServerPool } = require('./src/config/calidadSqlServerPool');
 
 const catalogosRoutes = require('./src/routes/catalogos.routes');
 const controlRoutes = require('./src/routes/control.routes');
@@ -47,23 +47,21 @@ const PORT = process.env.PORT || 3000;
 
 app.get('/api/health', async (req, res) => {
   try {
-    const connection = await pool.getConnection();
+    const poolConn = await getCalidadSqlServerPool();
 
-    await connection.query('SELECT 1');
-
-    connection.release();
+    await poolConn.request().query('SELECT 1');
 
     res.json({
       ok: true,
-      message: 'Backend y MySQL operativos',
-      database: process.env.DB_NAME,
+      message: 'Backend y SQL Server (calidad_db) operativos',
+      database: process.env.CALIDAD_SQL_DATABASE,
     });
   } catch (error) {
-    console.error('Error MySQL:', error.message);
+    console.error('Error SQL Server:', error.message);
 
     res.status(500).json({
       ok: false,
-      message: 'Error conexión MySQL',
+      message: 'Error conexión SQL Server',
       error: error.message,
     });
   }

@@ -1,8 +1,9 @@
-const pool = require('../config/database');
+const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 const fs = require('fs');
 
 const crearRegistroProductoTerminado = async (req, res) => {
-    const connection = await pool.getConnection();
+    const poolConn = await getCalidadSqlServerPool();
+    const transaction = new sql.Transaction(poolConn);
 
     try {
         let body = req.body;
@@ -66,10 +67,39 @@ const crearRegistroProductoTerminado = async (req, res) => {
             });
         }
 
-        await connection.beginTransaction();
+        await transaction.begin();
 
-        const [registroResult] = await connection.query(
-            `
+        const unidadesNc = hallazgosArray.length;
+        const defectosTotales = hallazgosArray.reduce(
+            (total, h) => total + (Array.isArray(h.defectoIds) ? h.defectoIds.length : 0),
+            0
+        );
+
+        const registroResult = await new sql.Request(transaction)
+            .input('usuarioId', sql.Int, usuarioId)
+            .input('np', sql.NVarChar(50), np || null)
+            .input('cliente', sql.NVarChar(255), cliente || null)
+            .input('codigoProducto', sql.NVarChar(100), codigoProducto || null)
+            .input('descripcionProducto', sql.NVarChar(255), descripcionProducto || null)
+            .input('procesoPt', sql.NVarChar(12), procesoPt)
+            .input('empresa', sql.NVarChar(7), empresa)
+            .input('cantidadLote', sql.Int, cantidadLote)
+            .input('cantidadPallets', sql.Int, cantidadPallets || null)
+            .input('cantidadCajasBins', sql.Int, cantidadCajasBins || null)
+            .input('maquina', sql.NVarChar(150), maquina || null)
+            .input('turno', sql.NVarChar(1), turno)
+            .input('nivelInspeccion', sql.NVarChar(3), nivelInspeccion)
+            .input('aql', sql.Decimal(7, 3), aql)
+            .input('letraCodigo', sql.NChar(1), letraCodigo)
+            .input('tamanoMuestra', sql.Int, tamanoMuestra)
+            .input('ac', sql.Int, ac ?? null)
+            .input('re', sql.Int, re ?? null)
+            .input('inspeccion100', sql.Bit, inspeccion100 ? 1 : 0)
+            .input('unidadesNc', sql.Int, unidadesNc)
+            .input('defectosTotales', sql.Int, defectosTotales)
+            .input('resultado', sql.NVarChar(11), resultado)
+            .query(
+                `
             INSERT INTO registros_producto_terminado
             (
               usuario_id,
@@ -97,47 +127,24 @@ const crearRegistroProductoTerminado = async (req, res) => {
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
-            `,
-            [
-                usuarioId,
-                np || null,
-                cliente || null,
-                codigoProducto || null,
-                descripcionProducto || null,
-                procesoPt,
-                empresa,
-                cantidadLote,
-                cantidadPallets || null,
-                cantidadCajasBins || null,
-                maquina || null,
-                turno,
-                nivelInspeccion,
-                aql,
-                letraCodigo,
-                tamanoMuestra,
-                ac ?? null,
-                re ?? null,
-                inspeccion100 ? 1 : 0,
-                hallazgosArray.length,
-                hallazgosArray.reduce(
-                    (total, h) => total + (Array.isArray(h.defectoIds) ? h.defectoIds.length : 0),
-                    0
-                ),
-                resultado,
-            ]
-        );
+            OUTPUT INSERTED.id
+            VALUES (@usuarioId, @np, @cliente, @codigoProducto, @descripcionProducto, @procesoPt, @empresa,
+              @cantidadLote, @cantidadPallets, @cantidadCajasBins, @maquina, @turno, @nivelInspeccion, @aql,
+              @letraCodigo, @tamanoMuestra, @ac, @re, @inspeccion100, @unidadesNc, @defectosTotales, @resultado,
+              CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
+            `
+            );
 
-        const registroId = registroResult.insertId;
+        const registroId = registroResult.recordset[0].id;
 
         if (Array.isArray(pallets)) {
             for (const palletId of pallets) {
                 if (!palletId || !String(palletId).trim()) continue;
 
-                await connection.query(
-                    `INSERT INTO registro_pt_pallets (registro_id, pallet_id) VALUES (?, ?)`,
-                    [registroId, String(palletId).trim()]
-                );
+                await new sql.Request(transaction)
+                    .input('registroId', sql.Int, registroId)
+                    .input('palletId', sql.NVarChar(100), String(palletId).trim())
+                    .query(`INSERT INTO registro_pt_pallets (registro_id, pallet_id) VALUES (@registroId, @palletId)`);
             }
         }
 
@@ -146,8 +153,16 @@ const crearRegistroProductoTerminado = async (req, res) => {
             const archivo = archivos[i];
             const rutaRelativa = `/uploads/producto_terminado/${archivo.filename}`;
 
-            const [hallazgoResult] = await connection.query(
-                `
+            const hallazgoResult = await new sql.Request(transaction)
+                .input('registroId', sql.Int, registroId)
+                .input('correlativo', sql.Int, i + 1)
+                .input('origenId', sql.Int, hallazgo.origenId)
+                .input('observacion', sql.NVarChar(120), hallazgo.observacion || null)
+                .input('fotoNombreOriginal', sql.NVarChar(255), archivo.originalname)
+                .input('fotoNombreArchivo', sql.NVarChar(255), archivo.filename)
+                .input('fotoRuta', sql.NVarChar(500), rutaRelativa)
+                .query(
+                    `
                 INSERT INTO registro_pt_hallazgos
                 (
                   registro_id,
@@ -158,31 +173,24 @@ const crearRegistroProductoTerminado = async (req, res) => {
                   foto_nombre_archivo,
                   foto_ruta
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                `,
-                [
-                    registroId,
-                    i + 1,
-                    hallazgo.origenId,
-                    hallazgo.observacion || null,
-                    archivo.originalname,
-                    archivo.filename,
-                    rutaRelativa,
-                ]
-            );
+                OUTPUT INSERTED.id
+                VALUES (@registroId, @correlativo, @origenId, @observacion, @fotoNombreOriginal,
+                  @fotoNombreArchivo, @fotoRuta)
+                `
+                );
 
-            const hallazgoId = hallazgoResult.insertId;
+            const hallazgoId = hallazgoResult.recordset[0].id;
             const defectoIds = Array.isArray(hallazgo.defectoIds) ? hallazgo.defectoIds : [];
 
             for (const defectoId of defectoIds) {
-                await connection.query(
-                    `INSERT INTO registro_pt_hallazgo_defectos (hallazgo_id, defecto_id) VALUES (?, ?)`,
-                    [hallazgoId, defectoId]
-                );
+                await new sql.Request(transaction)
+                    .input('hallazgoId', sql.Int, hallazgoId)
+                    .input('defectoId', sql.Int, defectoId)
+                    .query(`INSERT INTO registro_pt_hallazgo_defectos (hallazgo_id, defecto_id) VALUES (@hallazgoId, @defectoId)`);
             }
         }
 
-        await connection.commit();
+        await transaction.commit();
 
         res.status(201).json({
             ok: true,
@@ -192,7 +200,9 @@ const crearRegistroProductoTerminado = async (req, res) => {
             },
         });
     } catch (error) {
-        await connection.rollback();
+        try {
+            await transaction.rollback();
+        } catch (_) { }
 
         if (Array.isArray(req.files)) {
             for (const archivo of req.files) {
@@ -209,8 +219,6 @@ const crearRegistroProductoTerminado = async (req, res) => {
             message: 'Error al guardar inspección',
             error: error.message,
         });
-    } finally {
-        connection.release();
     }
 };
 
@@ -222,32 +230,44 @@ const listarRegistrosProductoTerminado = async (req, res) => {
         const offset = (page - 1) * pageSize;
 
         const condiciones = [];
-        const params = [];
+        const inputs = [];
 
         if (fechaDesde) {
-            condiciones.push('r.fecha_registro >= ?');
-            params.push(fechaDesde);
+            condiciones.push('r.fecha_registro >= @fechaDesde');
+            inputs.push({ name: 'fechaDesde', type: sql.Date, value: fechaDesde });
         }
 
         if (fechaHasta) {
-            condiciones.push('r.fecha_registro <= ?');
-            params.push(fechaHasta);
+            condiciones.push('r.fecha_registro <= @fechaHasta');
+            inputs.push({ name: 'fechaHasta', type: sql.Date, value: fechaHasta });
         }
 
         if (procesoPt) {
-            condiciones.push('r.proceso_pt = ?');
-            params.push(procesoPt);
+            condiciones.push('r.proceso_pt = @procesoPt');
+            inputs.push({ name: 'procesoPt', type: sql.NVarChar(12), value: procesoPt });
         }
 
         if (resultado) {
-            condiciones.push('r.resultado = ?');
-            params.push(resultado);
+            condiciones.push('r.resultado = @resultado');
+            inputs.push({ name: 'resultado', type: sql.NVarChar(11), value: resultado });
         }
 
         const whereSql = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
 
-        const [rows] = await pool.query(
-            `
+        const poolConn = await getCalidadSqlServerPool();
+
+        const aplicarInputs = (request) => {
+            for (const i of inputs) {
+                request.input(i.name, i.type, i.value);
+            }
+            return request;
+        };
+
+        const rowsResult = await aplicarInputs(poolConn.request())
+            .input('pageSize', sql.Int, pageSize)
+            .input('offset', sql.Int, offset)
+            .query(
+                `
             SELECT
               r.id, r.np, r.cliente, r.codigo_producto, r.descripcion_producto,
               r.proceso_pt, r.empresa, r.cantidad_lote, r.cantidad_pallets, r.cantidad_cajas_bins,
@@ -259,20 +279,18 @@ const listarRegistrosProductoTerminado = async (req, res) => {
             LEFT JOIN usuarios u ON u.id = r.usuario_id
             ${whereSql}
             ORDER BY r.id DESC
-            LIMIT ? OFFSET ?
-            `,
-            [...params, pageSize, offset]
-        );
+            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+            `
+            );
 
-        const [[{ total }]] = await pool.query(
-            `SELECT COUNT(*) AS total FROM registros_producto_terminado r ${whereSql}`,
-            params
+        const totalResult = await aplicarInputs(poolConn.request()).query(
+            `SELECT COUNT(*) AS total FROM registros_producto_terminado r ${whereSql}`
         );
 
         res.json({
             ok: true,
-            data: rows,
-            pagination: { page, pageSize, total },
+            data: rowsResult.recordset,
+            pagination: { page, pageSize, total: totalResult.recordset[0].total },
         });
     } catch (error) {
         console.error('Error al listar registros Producto Terminado:', error.message);
@@ -289,57 +307,63 @@ const obtenerRegistroProductoTerminado = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [registros] = await pool.query(
-            `
+        const poolConn = await getCalidadSqlServerPool();
+
+        const registrosResult = await poolConn.request()
+            .input('id', sql.Int, id)
+            .query(
+                `
             SELECT
               r.*, u.nombre_completo AS inspector
             FROM registros_producto_terminado r
             LEFT JOIN usuarios u ON u.id = r.usuario_id
-            WHERE r.id = ?
-            `,
-            [id]
-        );
+            WHERE r.id = @id
+            `
+            );
+        const registros = registrosResult.recordset;
 
         if (registros.length === 0) {
             return res.status(404).json({ ok: false, message: 'Registro no encontrado' });
         }
 
-        const [pallets] = await pool.query(
-            'SELECT id, pallet_id FROM registro_pt_pallets WHERE registro_id = ?',
-            [id]
-        );
+        const palletsResult = await poolConn.request()
+            .input('id', sql.Int, id)
+            .query('SELECT id, pallet_id FROM registro_pt_pallets WHERE registro_id = @id');
 
-        const [hallazgos] = await pool.query(
-            `
+        const hallazgosResult = await poolConn.request()
+            .input('id', sql.Int, id)
+            .query(
+                `
             SELECT
               h.id, h.correlativo, h.origen_id, o.nombre AS origen_nombre,
               h.observacion, h.foto_nombre_original, h.foto_ruta
             FROM registro_pt_hallazgos h
             LEFT JOIN origenes_problema o ON o.id = h.origen_id
-            WHERE h.registro_id = ?
+            WHERE h.registro_id = @id
             ORDER BY h.correlativo ASC
-            `,
-            [id]
-        );
+            `
+            );
+        const hallazgos = hallazgosResult.recordset;
 
         for (const hallazgo of hallazgos) {
-            const [defectos] = await pool.query(
-                `
+            const defectosResult = await poolConn.request()
+                .input('hallazgoId', sql.Int, hallazgo.id)
+                .query(
+                    `
                 SELECT d.id, p.nombre
                 FROM registro_pt_hallazgo_defectos d
                 LEFT JOIN parametros_control_visual p ON p.id = d.defecto_id
-                WHERE d.hallazgo_id = ?
-                `,
-                [hallazgo.id]
-            );
-            hallazgo.defectos = defectos;
+                WHERE d.hallazgo_id = @hallazgoId
+                `
+                );
+            hallazgo.defectos = defectosResult.recordset;
         }
 
         res.json({
             ok: true,
             data: {
                 ...registros[0],
-                pallets,
+                pallets: palletsResult.recordset,
                 hallazgos,
             },
         });

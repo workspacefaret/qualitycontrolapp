@@ -1,8 +1,9 @@
-const pool = require('../config/database');
+const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 
 const getUsuarios = async (req, res) => {
     try {
-        const [rows] = await pool.query(`
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request().query(`
       SELECT
         id,
         codigo_usuario,
@@ -14,7 +15,7 @@ const getUsuarios = async (req, res) => {
 
         res.json({
             ok: true,
-            data: rows,
+            data: result.recordset,
         });
     } catch (error) {
         console.error('Error usuarios:', error.message);
@@ -29,7 +30,8 @@ const getUsuarios = async (req, res) => {
 
 const getProcesos = async (req, res) => {
     try {
-        const [rows] = await pool.query(`
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request().query(`
       SELECT
         id,
         nombre
@@ -40,7 +42,7 @@ const getProcesos = async (req, res) => {
 
         res.json({
             ok: true,
-            data: rows,
+            data: result.recordset,
         });
     } catch (error) {
         console.error('Error procesos:', error.message);
@@ -55,7 +57,8 @@ const getProcesos = async (req, res) => {
 
 const getMaquinas = async (req, res) => {
     try {
-        const [rows] = await pool.query(`
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request().query(`
       SELECT
         m.id,
         m.nombre,
@@ -70,7 +73,7 @@ const getMaquinas = async (req, res) => {
 
         res.json({
             ok: true,
-            data: rows,
+            data: result.recordset,
         });
     } catch (error) {
         console.error('Error maquinas:', error.message);
@@ -86,8 +89,11 @@ const getParametrosVisuales = async (req, res) => {
     try {
         const { procesoId } = req.params;
 
-        const [rows] = await pool.query(
-            `
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request()
+            .input('procesoId', sql.Int, procesoId)
+            .query(
+                `
         SELECT
           id,
           proceso_id,
@@ -95,17 +101,16 @@ const getParametrosVisuales = async (req, res) => {
           criticidad
         FROM parametros_control_visual
         WHERE activo = 1
-          AND proceso_id = ?
+          AND proceso_id = @procesoId
         ORDER BY
-          FIELD(criticidad, 'critico', 'mayor', 'menor'),
+          CASE criticidad WHEN 'critico' THEN 1 WHEN 'mayor' THEN 2 WHEN 'menor' THEN 3 ELSE 4 END,
           nombre ASC
-        `,
-            [procesoId]
-        );
+        `
+            );
 
         res.json({
             ok: true,
-            data: rows,
+            data: result.recordset,
         });
     } catch (error) {
         console.error('Error parametros visuales:', error.message);
@@ -121,23 +126,25 @@ const getOrigenesProblema = async (req, res) => {
     try {
         const { procesoId } = req.params;
 
-        const [rows] = await pool.query(
-            `
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request()
+            .input('procesoId', sql.Int, procesoId)
+            .query(
+                `
         SELECT
           id,
           proceso_id,
           nombre
         FROM origenes_problema
         WHERE activo = 1
-          AND proceso_id = ?
+          AND proceso_id = @procesoId
         ORDER BY nombre ASC
-        `,
-            [procesoId]
-        );
+        `
+            );
 
         res.json({
             ok: true,
-            data: rows,
+            data: result.recordset,
         });
     } catch (error) {
         console.error('Error origenes problema:', error.message);
@@ -151,7 +158,9 @@ const getOrigenesProblema = async (req, res) => {
 };
 const getCatalogoOffline = async (req, res) => {
     try {
-        const [usuarios] = await pool.query(`
+        const pool = await getCalidadSqlServerPool();
+
+        const usuariosResult = await pool.request().query(`
       SELECT
         id,
         codigo_usuario,
@@ -161,7 +170,7 @@ const getCatalogoOffline = async (req, res) => {
       ORDER BY nombre_completo ASC
     `);
 
-        const [contextos] = await pool.query(`
+        const contextosResult = await pool.request().query(`
       SELECT
         m.id AS machineId,
         m.nombre AS machineName,
@@ -180,7 +189,7 @@ const getCatalogoOffline = async (req, res) => {
       ORDER BY p.nombre ASC, m.nombre ASC
     `);
 
-        const [parametrosVisuales] = await pool.query(`
+        const parametrosVisualesResult = await pool.request().query(`
       SELECT
         id,
         proceso_id,
@@ -190,10 +199,10 @@ const getCatalogoOffline = async (req, res) => {
       WHERE activo = 1
       ORDER BY
         proceso_id ASC,
-        FIELD(criticidad, 'critico', 'mayor', 'menor'),
+        CASE criticidad WHEN 'critico' THEN 1 WHEN 'mayor' THEN 2 WHEN 'menor' THEN 3 ELSE 4 END,
         nombre ASC
     `);
-        const [tiposOnda] = await pool.query(`
+        const tiposOndaResult = await pool.request().query(`
   SELECT
     id,
     nombre
@@ -202,7 +211,7 @@ const getCatalogoOffline = async (req, res) => {
   ORDER BY nombre ASC
 `);
 
-        const [materiales] = await pool.query(`
+        const materialesResult = await pool.request().query(`
   SELECT
     id,
     nombre
@@ -211,7 +220,7 @@ const getCatalogoOffline = async (req, res) => {
   ORDER BY nombre ASC
 `);
 
-        const [ensayosLaboratorio] = await pool.query(`
+        const ensayosLaboratorioResult = await pool.request().query(`
   SELECT
     id,
     proceso_id,
@@ -222,7 +231,7 @@ const getCatalogoOffline = async (req, res) => {
   ORDER BY nombre ASC
 `);
 
-        const [origenesProblema] = await pool.query(`
+        const origenesProblemaResult = await pool.request().query(`
   SELECT
     id,
     proceso_id,
@@ -231,6 +240,14 @@ const getCatalogoOffline = async (req, res) => {
   WHERE activo = 1
   ORDER BY proceso_id ASC, nombre ASC
 `);
+
+        const usuarios = usuariosResult.recordset;
+        const contextos = contextosResult.recordset;
+        const parametrosVisuales = parametrosVisualesResult.recordset;
+        const tiposOnda = tiposOndaResult.recordset;
+        const materiales = materialesResult.recordset;
+        const ensayosLaboratorio = ensayosLaboratorioResult.recordset;
+        const origenesProblema = origenesProblemaResult.recordset;
 
         const qrContexts = contextos.map((contexto) => ({
             ...contexto,

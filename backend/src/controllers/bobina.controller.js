@@ -1,5 +1,5 @@
 const { getSapSqlServerPool, sql } = require('../config/sqlServerPoolSap');
-const pool = require('../config/database');
+const { getCalidadSqlServerPool, sql: calidadSql } = require('../config/calidadSqlServerPool');
 
 const GRAMAJE_REGEX = /(\d{2,4})\s*GRS?\b/i;
 const MEDIDA_REGEX = /(\d+(?:[.,]\d+)?\s*[Xx]\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*CM)\b/;
@@ -107,8 +107,11 @@ const obtenerBobinasPorNp = async (req, res) => {
     const { np } = req.params;
 
     try {
-        const [rows] = await pool.query(
-            `
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request()
+            .input('np', calidadSql.NVarChar, np)
+            .query(
+                `
             SELECT
               b.id,
               b.registro_id,
@@ -129,13 +132,12 @@ const obtenerBobinasPorNp = async (req, res) => {
               rc.hora_registro
             FROM registro_control_bobinas b
             INNER JOIN registros_control rc ON rc.id = b.registro_id
-            WHERE rc.np = ? AND rc.eliminado = 0
+            WHERE rc.np = @np AND rc.eliminado = 0
             ORDER BY b.tipo ASC, b.escaneado_en ASC
-            `,
-            [np]
-        );
+            `
+            );
 
-        res.json({ ok: true, data: rows });
+        res.json({ ok: true, data: result.recordset });
     } catch (error) {
         console.error('Error consultando bobinas por NP:', error.message);
 

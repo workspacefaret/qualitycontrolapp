@@ -1,10 +1,11 @@
-const pool = require('../config/database');
+const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 
 const TIPOS_MATERIAL_VALIDOS = ['NV', 'PAPEL'];
 const RESULTADOS_VALIDOS = ['CUMPLE', 'NO_CUMPLE'];
 
 const crearRegistroCalidadFaretPallet = async (req, res) => {
-    const connection = await pool.getConnection();
+    const poolConn = await getCalidadSqlServerPool();
+    const transaction = new sql.Transaction(poolConn);
 
     try {
         const body = req.body || {};
@@ -99,9 +100,10 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
             }
         }
 
-        const [preguntasActivas] = await connection.query(
+        const preguntasActivasResult = await poolConn.request().query(
             'SELECT id FROM calidad_faret_pallet_preguntas WHERE activo = 1'
         );
+        const preguntasActivas = preguntasActivasResult.recordset;
 
         const idsActivos = new Set(preguntasActivas.map((p) => p.id));
 
@@ -112,10 +114,21 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
             });
         }
 
-        await connection.beginTransaction();
+        await transaction.begin();
 
-        const [registroResult] = await connection.query(
-            `
+        const registroResult = await new sql.Request(transaction)
+            .input('tipoMaterial', sql.NVarChar(5), tipoMaterial)
+            .input('dimension', sql.NVarChar(100), String(dimension).trim())
+            .input('fibra', sql.NVarChar(50), fibra ? String(fibra).trim() : null)
+            .input('numeroPallet', sql.NVarChar(100), String(numeroPallet).trim())
+            .input('numeroPasadasPrensa', sql.SmallInt, numeroPasadasPrensa ? Number(numeroPasadasPrensa) : null)
+            .input('observaciones', sql.NVarChar(sql.MAX), observaciones ? String(observaciones).trim() : null)
+            .input('areaControl', sql.NVarChar(100), areaControl || null)
+            .input('operador', sql.NVarChar(150), operador || null)
+            .input('operadorOtro', sql.NVarChar(150), operadorOtro || null)
+            .input('maquina', sql.NVarChar(150), maquina || null)
+            .query(
+                `
             INSERT INTO registros_calidad_faret_pallet
             (
               tipo_material,
@@ -131,48 +144,49 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
-            `,
-            [
-                tipoMaterial,
-                String(dimension).trim(),
-                fibra ? String(fibra).trim() : null,
-                String(numeroPallet).trim(),
-                numeroPasadasPrensa ? Number(numeroPasadasPrensa) : null,
-                observaciones ? String(observaciones).trim() : null,
-                areaControl || null,
-                operador || null,
-                operadorOtro || null,
-                maquina || null,
-            ]
-        );
+            OUTPUT INSERTED.id
+            VALUES (@tipoMaterial, @dimension, @fibra, @numeroPallet, @numeroPasadasPrensa, @observaciones,
+              @areaControl, @operador, @operadorOtro, @maquina, CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
+            `
+            );
 
-        const registroId = registroResult.insertId;
+        const registroId = registroResult.recordset[0].id;
 
         if (operador && String(operador).trim()) {
-            await connection.query(
-                'INSERT IGNORE INTO calidad_faret_operadores (nombre) VALUES (?)',
-                [String(operador).trim()]
-            );
+            try {
+                await new sql.Request(transaction)
+                    .input('nombre', sql.NVarChar(150), String(operador).trim())
+                    .query(
+                        `
+                        IF NOT EXISTS (SELECT 1 FROM calidad_faret_operadores WHERE nombre = @nombre)
+                        BEGIN
+                            INSERT INTO calidad_faret_operadores (nombre) VALUES (@nombre)
+                        END
+                        `
+                    );
+            } catch (errorOperador) {
+                if (errorOperador.number !== 2627 && errorOperador.number !== 2601) {
+                    throw errorOperador;
+                }
+            }
         }
 
         for (const respuesta of respuestas) {
-            await connection.query(
-                `
+            await new sql.Request(transaction)
+                .input('registroId', sql.Int, registroId)
+                .input('preguntaId', sql.Int, Number(respuesta.preguntaId))
+                .input('resultado', sql.NVarChar(9), respuesta.resultado)
+                .input('observacion', sql.NVarChar(sql.MAX), respuesta.observacion ? String(respuesta.observacion).trim() : null)
+                .query(
+                    `
                 INSERT INTO registro_calidad_faret_pallet_respuestas
                 (registro_id, pregunta_id, resultado, observacion)
-                VALUES (?, ?, ?, ?)
-                `,
-                [
-                    registroId,
-                    Number(respuesta.preguntaId),
-                    respuesta.resultado,
-                    respuesta.observacion ? String(respuesta.observacion).trim() : null,
-                ]
-            );
+                VALUES (@registroId, @preguntaId, @resultado, @observacion)
+                `
+                );
         }
 
-        await connection.commit();
+        await transaction.commit();
 
         res.status(201).json({
             ok: true,
@@ -182,7 +196,9 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
             },
         });
     } catch (error) {
-        await connection.rollback();
+        try {
+            await transaction.rollback();
+        } catch (_) { }
 
         console.error('Error al guardar registro pallet/papel:', error);
 
@@ -191,14 +207,13 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
             message: 'Error al guardar registro',
             error: error.message,
         });
-    } finally {
-        connection.release();
     }
 };
 
 const listarPreguntasCalidadFaretPallet = async (req, res) => {
     try {
-        const [preguntas] = await pool.query(
+        const poolConn = await getCalidadSqlServerPool();
+        const result = await poolConn.request().query(
             `
             SELECT id, texto, orden
             FROM calidad_faret_pallet_preguntas
@@ -207,7 +222,7 @@ const listarPreguntasCalidadFaretPallet = async (req, res) => {
             `
         );
 
-        res.json({ ok: true, data: preguntas });
+        res.json({ ok: true, data: result.recordset });
     } catch (error) {
         console.error('Error al listar preguntas pallet/papel:', error.message);
 
@@ -223,42 +238,50 @@ const buildFiltrosPallet = (query) => {
     const { fechaDesde, fechaHasta, tipoMaterial, numeroPallet, maquina, operador } = query;
 
     const condiciones = ['r.eliminado = 0'];
-    const params = [];
+    const inputs = [];
 
     if (fechaDesde) {
-        condiciones.push('r.fecha_registro >= ?');
-        params.push(fechaDesde);
+        condiciones.push('r.fecha_registro >= @fechaDesde');
+        inputs.push({ name: 'fechaDesde', type: sql.Date, value: fechaDesde });
     }
 
     if (fechaHasta) {
-        condiciones.push('r.fecha_registro <= ?');
-        params.push(fechaHasta);
+        condiciones.push('r.fecha_registro <= @fechaHasta');
+        inputs.push({ name: 'fechaHasta', type: sql.Date, value: fechaHasta });
     }
 
     if (tipoMaterial) {
-        condiciones.push('r.tipo_material = ?');
-        params.push(tipoMaterial);
+        condiciones.push('r.tipo_material = @tipoMaterial');
+        inputs.push({ name: 'tipoMaterial', type: sql.NVarChar(5), value: tipoMaterial });
     }
 
     if (numeroPallet) {
-        condiciones.push('r.numero_pallet LIKE ?');
-        params.push(`%${numeroPallet}%`);
+        condiciones.push('r.numero_pallet LIKE @numeroPallet');
+        inputs.push({ name: 'numeroPallet', type: sql.NVarChar(100), value: `%${numeroPallet}%` });
     }
 
     if (maquina) {
-        condiciones.push('r.maquina LIKE ?');
-        params.push(`%${maquina}%`);
+        condiciones.push('r.maquina LIKE @maquina');
+        inputs.push({ name: 'maquina', type: sql.NVarChar(150), value: `%${maquina}%` });
     }
 
     if (operador) {
-        condiciones.push('r.operador LIKE ?');
-        params.push(`%${operador}%`);
+        condiciones.push('r.operador LIKE @operador');
+        inputs.push({ name: 'operador', type: sql.NVarChar(150), value: `%${operador}%` });
     }
 
     return {
         whereSql: condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '',
-        params,
+        inputs,
     };
+};
+
+const aplicarInputs = (request, inputs) => {
+    for (const i of inputs) {
+        request.input(i.name, i.type, i.value);
+    }
+
+    return request;
 };
 
 const listarRegistrosCalidadFaretPallet = async (req, res) => {
@@ -267,15 +290,18 @@ const listarRegistrosCalidadFaretPallet = async (req, res) => {
         const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
         const offset = (page - 1) * pageSize;
 
-        const { whereSql, params } = buildFiltrosPallet(req.query);
+        const { whereSql, inputs } = buildFiltrosPallet(req.query);
+        const poolConn = await getCalidadSqlServerPool();
 
-        const [countRows] = await pool.query(
-            `SELECT COUNT(*) AS total FROM registros_calidad_faret_pallet r ${whereSql}`,
-            params
+        const countResult = await aplicarInputs(poolConn.request(), inputs).query(
+            `SELECT COUNT(*) AS total FROM registros_calidad_faret_pallet r ${whereSql}`
         );
 
-        const [rows] = await pool.query(
-            `
+        const rowsResult = await aplicarInputs(poolConn.request(), inputs)
+            .input('pageSize', sql.Int, pageSize)
+            .input('offset', sql.Int, offset)
+            .query(
+                `
             SELECT
               r.id,
               r.tipo_material AS tipoMaterial,
@@ -298,16 +324,15 @@ const listarRegistrosCalidadFaretPallet = async (req, res) => {
             FROM registros_calidad_faret_pallet r
             ${whereSql}
             ORDER BY r.fecha_registro DESC, r.hora_registro DESC
-            LIMIT ? OFFSET ?
-            `,
-            [...params, pageSize, offset]
-        );
+            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+            `
+            );
 
         res.json({
             ok: true,
             data: {
-                items: rows,
-                totalCount: countRows[0].total,
+                items: rowsResult.recordset,
+                totalCount: countResult.recordset[0].total,
                 page,
                 pageSize,
             },
@@ -327,8 +352,12 @@ const obtenerRegistroCalidadFaretPallet = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [registros] = await pool.query(
-            `
+        const poolConn = await getCalidadSqlServerPool();
+
+        const registrosResult = await poolConn.request()
+            .input('id', sql.Int, id)
+            .query(
+                `
             SELECT
               r.id,
               r.tipo_material AS tipoMaterial,
@@ -344,10 +373,10 @@ const obtenerRegistroCalidadFaretPallet = async (req, res) => {
               r.fecha_registro AS fechaRegistro,
               r.hora_registro AS horaRegistro
             FROM registros_calidad_faret_pallet r
-            WHERE r.id = ? AND r.eliminado = 0
-            `,
-            [id]
-        );
+            WHERE r.id = @id AND r.eliminado = 0
+            `
+            );
+        const registros = registrosResult.recordset;
 
         if (registros.length === 0) {
             return res.status(404).json({
@@ -356,8 +385,10 @@ const obtenerRegistroCalidadFaretPallet = async (req, res) => {
             });
         }
 
-        const [respuestas] = await pool.query(
-            `
+        const respuestasResult = await poolConn.request()
+            .input('id', sql.Int, id)
+            .query(
+                `
             SELECT
               resp.pregunta_id AS preguntaId,
               p.texto,
@@ -365,17 +396,16 @@ const obtenerRegistroCalidadFaretPallet = async (req, res) => {
               resp.observacion
             FROM registro_calidad_faret_pallet_respuestas resp
             INNER JOIN calidad_faret_pallet_preguntas p ON p.id = resp.pregunta_id
-            WHERE resp.registro_id = ?
+            WHERE resp.registro_id = @id
             ORDER BY p.orden ASC, p.id ASC
-            `,
-            [id]
-        );
+            `
+            );
 
         res.json({
             ok: true,
             data: {
                 ...registros[0],
-                respuestas,
+                respuestas: respuestasResult.recordset,
             },
         });
     } catch (error) {
@@ -393,12 +423,14 @@ const eliminarRegistroCalidadFaretPallet = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [resultado] = await pool.query(
-            'UPDATE registros_calidad_faret_pallet SET eliminado = 1 WHERE id = ? AND eliminado = 0',
-            [id]
-        );
+        const poolConn = await getCalidadSqlServerPool();
+        const resultado = await poolConn.request()
+            .input('id', sql.Int, id)
+            .query(
+                'UPDATE registros_calidad_faret_pallet SET eliminado = 1 WHERE id = @id AND eliminado = 0'
+            );
 
-        if (resultado.affectedRows === 0) {
+        if (resultado.rowsAffected[0] === 0) {
             return res.status(404).json({
                 ok: false,
                 message: 'Registro no encontrado',

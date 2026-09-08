@@ -1,8 +1,9 @@
-const pool = require('../config/database');
+const { getCalidadSqlServerPool } = require('../config/calidadSqlServerPool');
 
 const listarOperadoresCalidadFaret = async (req, res) => {
     try {
-        const [operadores] = await pool.query(`
+        const pool = await getCalidadSqlServerPool();
+        const result = await pool.request().query(`
             SELECT nombre
             FROM calidad_faret_operadores
             ORDER BY nombre ASC
@@ -10,7 +11,7 @@ const listarOperadoresCalidadFaret = async (req, res) => {
 
         res.json({
             ok: true,
-            data: operadores.map((o) => o.nombre),
+            data: result.recordset.map((o) => o.nombre),
         });
     } catch (error) {
         console.error('Error al listar operadores calidad Faret:', error.message);

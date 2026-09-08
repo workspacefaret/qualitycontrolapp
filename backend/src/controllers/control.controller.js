@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 const fs = require('fs');
 
 
@@ -6,8 +6,12 @@ const getContextoPorQr = async (req, res) => {
     try {
         const { codigoQr } = req.params;
 
-        const [rows] = await pool.query(
-            `
+        const poolConn = await getCalidadSqlServerPool();
+
+        const rowsResult = await poolConn.request()
+            .input('codigoQr', sql.NVarChar, codigoQr)
+            .query(
+                `
       SELECT
         m.id AS machineId,
         m.nombre AS machineName,
@@ -22,12 +26,11 @@ const getContextoPorQr = async (req, res) => {
         ON f.proceso_id = p.id
         AND f.activo = 1
         AND f.maquina_id IS NULL
-      WHERE m.codigo_qr = ?
+      WHERE m.codigo_qr = @codigoQr
         AND m.activo = 1
-      LIMIT 1
-      `,
-            [codigoQr]
-        );
+      `
+            );
+        const rows = rowsResult.recordset;
 
         if (rows.length === 0) {
             return res.status(404).json({
@@ -36,25 +39,7 @@ const getContextoPorQr = async (req, res) => {
             });
         }
 
-        const contexto = rows[0];
-
-        const [parametrosVisuales] = await pool.query(
-            `
-      SELECT
-        id,
-        proceso_id,
-        nombre,
-        criticidad
-      FROM parametros_control_visual
-      WHERE activo = 1
-        AND proceso_id = ?
-      ORDER BY
-        FIELD(criticidad, 'critico', 'mayor', 'menor'),
-        nombre ASC
-      `,
-            [contexto.processId]
-        );
-        const [tiposOnda] = await pool.query(
+        const tiposOndaResult = await poolConn.request().query(
             `
             SELECT
               id,
@@ -64,7 +49,9 @@ const getContextoPorQr = async (req, res) => {
             ORDER BY nombre ASC
             `
         );
-        const [materiales] = await pool.query(
+        const tiposOnda = tiposOndaResult.recordset;
+
+        const materialesResult = await poolConn.request().query(
             `
             SELECT
               id,
@@ -74,8 +61,9 @@ const getContextoPorQr = async (req, res) => {
             ORDER BY nombre ASC
             `
         );
+        const materiales = materialesResult.recordset;
 
-        const [ensayosLaboratorio] = await pool.query(
+        const ensayosLaboratorioResult = await poolConn.request().query(
             `
             SELECT
               id,
@@ -87,31 +75,59 @@ const getContextoPorQr = async (req, res) => {
             ORDER BY nombre ASC
             `
         );
+        const ensayosLaboratorio = ensayosLaboratorioResult.recordset;
 
-        const [origenesProblema] = await pool.query(
-            `
-            SELECT
-              id,
-              proceso_id,
-              nombre
-            FROM origenes_problema
-            WHERE activo = 1
-              AND proceso_id = ?
-            ORDER BY nombre ASC
-            `,
-            [contexto.processId]
+        const contextos = await Promise.all(
+            rows.map(async (contexto) => {
+                const parametrosVisualesResult = await poolConn.request()
+                    .input('processId', sql.Int, contexto.processId)
+                    .query(
+                        `
+          SELECT
+            id,
+            proceso_id,
+            nombre,
+            criticidad
+          FROM parametros_control_visual
+          WHERE activo = 1
+            AND proceso_id = @processId
+          ORDER BY
+            CASE criticidad WHEN 'critico' THEN 1 WHEN 'mayor' THEN 2 WHEN 'menor' THEN 3 ELSE 4 END,
+            nombre ASC
+          `
+                    );
+                const parametrosVisuales = parametrosVisualesResult.recordset;
+
+                const origenesProblemaResult = await poolConn.request()
+                    .input('processId', sql.Int, contexto.processId)
+                    .query(
+                        `
+                    SELECT
+                      id,
+                      proceso_id,
+                      nombre
+                    FROM origenes_problema
+                    WHERE activo = 1
+                      AND proceso_id = @processId
+                    ORDER BY nombre ASC
+                    `
+                    );
+                const origenesProblema = origenesProblemaResult.recordset;
+
+                return {
+                    ...contexto,
+                    parametrosVisuales,
+                    origenesProblema,
+                    tiposOnda: contexto.processId === 1 ? tiposOnda : [],
+                    materiales,
+                    ensayosLaboratorio,
+                };
+            })
         );
 
         res.json({
             ok: true,
-            data: {
-                ...contexto,
-                parametrosVisuales,
-                origenesProblema,
-                tiposOnda: contexto.processId === 1 ? tiposOnda : [],
-                materiales,
-                ensayosLaboratorio,
-            },
+            data: contextos,
         });
     } catch (error) {
         console.error('Error contexto QR:', error.message);
@@ -124,7 +140,8 @@ const getContextoPorQr = async (req, res) => {
     }
 };
 const crearRegistroControl = async (req, res) => {
-    const connection = await pool.getConnection();
+    const poolConn = await getCalidadSqlServerPool();
+    const transaction = new sql.Transaction(poolConn);
 
     try {
         console.log('==========================');
@@ -161,6 +178,13 @@ const crearRegistroControl = async (req, res) => {
             ensayosLaboratorio,
             bobinas,
             origenId,
+            humedadBobina,
+            humedadLinerIzquierda,
+            humedadLinerCentro,
+            humedadLinerDerecha,
+            humedadOndaIzquierda,
+            humedadOndaCentro,
+            humedadOndaDerecha,
         } = body;
 
         if (!usuarioId || !procesoId || !maquinaId || !turno || !resultadoVisual) {
@@ -185,15 +209,53 @@ const crearRegistroControl = async (req, res) => {
             });
         }
         const esCorrugado = Number(procesoId) === 1;
+        const esProduccion = area === 'PRODUCCION INNPACK';
+        const mostrarHumedad = esCorrugado && esProduccion;
 
         const tipoOndaIdFinal = esCorrugado ? tipoOndaId || null : null;
         const mermaInsumosFinal = esCorrugado ? mermaInsumosDesponcheBobinas || null : null;
         const mermaProcesoFinal = esCorrugado ? mermaProcesoMonotapas || null : null;
 
-        await connection.beginTransaction();
+        const humedadBobinaFinal = mostrarHumedad ? humedadBobina || null : null;
+        const humedadLinerIzquierdaFinal = mostrarHumedad ? humedadLinerIzquierda || null : null;
+        const humedadLinerCentroFinal = mostrarHumedad ? humedadLinerCentro || null : null;
+        const humedadLinerDerechaFinal = mostrarHumedad ? humedadLinerDerecha || null : null;
+        const humedadOndaIzquierdaFinal = mostrarHumedad ? humedadOndaIzquierda || null : null;
+        const humedadOndaCentroFinal = mostrarHumedad ? humedadOndaCentro || null : null;
+        const humedadOndaDerechaFinal = mostrarHumedad ? humedadOndaDerecha || null : null;
 
-        const [registroResult] = await connection.query(
-            `
+        await transaction.begin();
+
+        const registroResult = await new sql.Request(transaction)
+            .input('usuarioId', sql.Int, usuarioId)
+            .input('procesoId', sql.Int, procesoId)
+            .input('maquinaId', sql.Int, maquinaId)
+            .input('formularioId', sql.Int, formularioId || null)
+            .input('area', sql.NVarChar(20), area || null)
+            .input('np', sql.NVarChar(50), np || null)
+            .input('cliente', sql.NVarChar(255), cliente || null)
+            .input('codigoProducto', sql.NVarChar(100), codigoProducto || null)
+            .input('descripcionProducto', sql.NVarChar(255), descripcionProducto || null)
+            .input('tipoOndaId', sql.Int, tipoOndaIdFinal)
+            .input('mermaInsumos', sql.Decimal(10, 2), mermaInsumosFinal)
+            .input('mermaProceso', sql.Decimal(10, 2), mermaProcesoFinal)
+            .input('turno', sql.NVarChar(1), turno)
+            .input('estadoId', sql.Int, estadoId)
+            .input('observacion', sql.NVarChar(120), observacion || null)
+            .input('requiereEnsayoLaboratorio', sql.Bit, requiereEnsayoLaboratorio ? 1 : 0)
+            .input('requiereMerma', sql.Bit, requiereMerma ? 1 : 0)
+            .input('tipoMerma', sql.NVarChar(150), tipoMerma || null)
+            .input('cantidadMerma', sql.Decimal(10, 2), cantidadMerma || null)
+            .input('origenId', sql.Int, origenId || null)
+            .input('humedadBobina', sql.NVarChar(50), humedadBobinaFinal)
+            .input('humedadLinerIzquierda', sql.NVarChar(50), humedadLinerIzquierdaFinal)
+            .input('humedadLinerCentro', sql.NVarChar(50), humedadLinerCentroFinal)
+            .input('humedadLinerDerecha', sql.NVarChar(50), humedadLinerDerechaFinal)
+            .input('humedadOndaIzquierda', sql.NVarChar(50), humedadOndaIzquierdaFinal)
+            .input('humedadOndaCentro', sql.NVarChar(50), humedadOndaCentroFinal)
+            .input('humedadOndaDerecha', sql.NVarChar(50), humedadOndaDerechaFinal)
+            .query(
+                `
             INSERT INTO registros_control
             (
               usuario_id,
@@ -216,41 +278,38 @@ const crearRegistroControl = async (req, res) => {
               tipo_merma,
               cantidad_merma,
               origen_id,
+              humedad_bobina,
+              humedad_liner_izquierda,
+              humedad_liner_centro,
+              humedad_liner_derecha,
+              humedad_onda_izquierda,
+              humedad_onda_centro,
+              humedad_onda_derecha,
               fecha_registro,
               hora_registro
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())
-            `,
-            [
-                usuarioId,
-                procesoId,
-                maquinaId,
-                formularioId || null,
-                area || null,
-                np || null,
-                cliente || null,
-                codigoProducto || null,
-                descripcionProducto || null,
-                tipoOndaIdFinal,
-                mermaInsumosFinal,
-                mermaProcesoFinal,
-                turno,
-                estadoId,
-                observacion || null,
-                requiereEnsayoLaboratorio ? 1 : 0,
-                requiereMerma ? 1 : 0,
-                tipoMerma || null,
-                cantidadMerma || null,
-                origenId || null,
-            ]
-        );
+            OUTPUT INSERTED.id
+            VALUES (@usuarioId, @procesoId, @maquinaId, @formularioId, @area, @np, @cliente, @codigoProducto,
+              @descripcionProducto, @tipoOndaId, @mermaInsumos, @mermaProceso, @turno, @estadoId, @observacion,
+              @requiereEnsayoLaboratorio, @requiereMerma, @tipoMerma, @cantidadMerma, @origenId, @humedadBobina,
+              @humedadLinerIzquierda, @humedadLinerCentro, @humedadLinerDerecha, @humedadOndaIzquierda,
+              @humedadOndaCentro, @humedadOndaDerecha, CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
+            `
+            );
 
-        const registroId = registroResult.insertId;
+        const registroId = registroResult.recordset[0].id;
         if (req.file) {
             const rutaRelativa = `/uploads/control/${req.file.filename}`;
 
-            await connection.query(
-                `
+            await new sql.Request(transaction)
+                .input('registroId', sql.Int, registroId)
+                .input('nombreOriginal', sql.NVarChar(255), req.file.originalname)
+                .input('nombreArchivo', sql.NVarChar(255), req.file.filename)
+                .input('rutaArchivo', sql.NVarChar(500), rutaRelativa)
+                .input('mimeType', sql.NVarChar(100), req.file.mimetype)
+                .input('tamanoBytes', sql.Int, req.file.size)
+                .query(
+                    `
                 INSERT INTO registro_adjuntos
                 (
                   registro_id,
@@ -260,23 +319,20 @@ const crearRegistroControl = async (req, res) => {
                   mime_type,
                   tamano_bytes
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
-                `,
-                [
-                    registroId,
-                    req.file.originalname,
-                    req.file.filename,
-                    rutaRelativa,
-                    req.file.mimetype,
-                    req.file.size,
-                ]
-            );
+                VALUES (@registroId, @nombreOriginal, @nombreArchivo, @rutaArchivo, @mimeType, @tamanoBytes)
+                `
+                );
         }
 
         if (Array.isArray(fallasVisuales) && fallasVisuales.length > 0) {
             for (const falla of fallasVisuales) {
-                await connection.query(
-                    `
+                await new sql.Request(transaction)
+                    .input('registroId', sql.Int, registroId)
+                    .input('parametroId', sql.Int, falla.parametroId)
+                    .input('accionId', sql.Int, falla.accionId || null)
+                    .input('observacion', sql.NVarChar(120), falla.observacion || null)
+                    .query(
+                        `
             INSERT INTO registro_fallas_visuales
             (
               registro_id,
@@ -284,22 +340,22 @@ const crearRegistroControl = async (req, res) => {
               accion_id,
               observacion
             )
-            VALUES (?, ?, ?, ?)
-            `,
-                    [
-                        registroId,
-                        falla.parametroId,
-                        falla.accionId || null,
-                        falla.observacion || null,
-                    ]
-                );
+            VALUES (@registroId, @parametroId, @accionId, @observacion)
+            `
+                    );
             }
         }
 
         if (Array.isArray(ensayosLaboratorio) && ensayosLaboratorio.length > 0) {
             for (const ensayo of ensayosLaboratorio) {
-                await connection.query(
-                    `
+                await new sql.Request(transaction)
+                    .input('registroId', sql.Int, registroId)
+                    .input('ensayoId', sql.Int, ensayo.ensayoId)
+                    .input('materialId', sql.Int, ensayo.materialId || null)
+                    .input('valor', sql.Decimal(10, 2), null)
+                    .input('observacion', sql.NVarChar(120), ensayo.observacion || null)
+                    .query(
+                        `
                     INSERT INTO registro_ensayos
                     (
                       registro_id,
@@ -308,16 +364,9 @@ const crearRegistroControl = async (req, res) => {
                       valor,
                       observacion
                     )
-                    VALUES (?, ?, ?, ?, ?)
-                    `,
-                    [
-                        registroId,
-                        ensayo.ensayoId,
-                        ensayo.materialId || null,
-                        null,
-                        ensayo.observacion || null,
-                    ]
-                );
+                    VALUES (@registroId, @ensayoId, @materialId, @valor, @observacion)
+                    `
+                    );
             }
         }
 
@@ -327,8 +376,21 @@ const crearRegistroControl = async (req, res) => {
                     continue;
                 }
 
-                await connection.query(
-                    `
+                await new sql.Request(transaction)
+                    .input('registroId', sql.Int, registroId)
+                    .input('tipo', sql.NVarChar(5), bobina.tipo || null)
+                    .input('lote', sql.NVarChar(100), bobina.lote)
+                    .input('docnum', sql.NVarChar(50), bobina.docnum || null)
+                    .input('pesoTarjaKg', sql.Decimal(10, 2), bobina.pesoTarjaKg || null)
+                    .input('itemCode', sql.NVarChar(50), bobina.itemCode || null)
+                    .input('itemName', sql.NVarChar(255), bobina.itemName || null)
+                    .input('gramaje', sql.NVarChar(50), bobina.gramaje || null)
+                    .input('medida', sql.NVarChar(50), bobina.medida || null)
+                    .input('ubicacionBin', sql.NVarChar(100), bobina.ubicacionBin || null)
+                    .input('observacion', sql.NVarChar(120), bobina.observacion || null)
+                    .input('escaneadoEn', sql.DateTime2, bobina.escaneadoEn ? new Date(bobina.escaneadoEn) : new Date())
+                    .query(
+                        `
                     INSERT INTO registro_control_bobinas
                     (
                       registro_id,
@@ -344,27 +406,14 @@ const crearRegistroControl = async (req, res) => {
                       observacion,
                       escaneado_en
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `,
-                    [
-                        registroId,
-                        bobina.tipo || null,
-                        bobina.lote,
-                        bobina.docnum || null,
-                        bobina.pesoTarjaKg || null,
-                        bobina.itemCode || null,
-                        bobina.itemName || null,
-                        bobina.gramaje || null,
-                        bobina.medida || null,
-                        bobina.ubicacionBin || null,
-                        bobina.observacion || null,
-                        bobina.escaneadoEn ? new Date(bobina.escaneadoEn) : new Date(),
-                    ]
-                );
+                    VALUES (@registroId, @tipo, @lote, @docnum, @pesoTarjaKg, @itemCode, @itemName, @gramaje,
+                      @medida, @ubicacionBin, @observacion, @escaneadoEn)
+                    `
+                    );
             }
         }
 
-        await connection.commit();
+        await transaction.commit();
 
         res.status(201).json({
             ok: true,
@@ -375,7 +424,9 @@ const crearRegistroControl = async (req, res) => {
             },
         });
     } catch (error) {
-        await connection.rollback();
+        try {
+            await transaction.rollback();
+        } catch (_) { }
 
         if (req.file && req.file.path) {
             try {
@@ -392,8 +443,6 @@ const crearRegistroControl = async (req, res) => {
             message: 'Error al guardar control',
             error: error.message,
         });
-    } finally {
-        connection.release();
     }
 };
 
