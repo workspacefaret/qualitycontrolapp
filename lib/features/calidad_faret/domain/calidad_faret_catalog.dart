@@ -9,10 +9,22 @@ class CalidadFaretCatalog {
     '07-TROQUELADO',
     '10-PEGADO',
     '12-FOLLETOS',
+    '13-CORTE Y DIMENSIONADO',
   ];
 
+  // Áreas que tienen defectos configurados; solo estas se ofrecen como "Área del defecto".
+  static List<String> get areasConDefectos =>
+      areasControl.where(defectosPorArea.containsKey).toList();
+
   static const Map<String, List<String>> operadoresPorArea = {
-    '02-LAMINADO': ['ALAN ESCORCIA', 'LUIS SEPULVEDA', 'Otros'],
+    '02-LAMINADO': [
+      'ALAIN ESCORCIA',
+      'EMERSON RODRIGUEZ',
+      'JORGE GONZALEZ',
+      'LUIS SEPULVEDA',
+      'ORLANDO MEDINA',
+      'Otros',
+    ],
     '03-OFFSET': [
       'AXEL CRUZ',
       'DEDIER LEIVA',
@@ -62,10 +74,18 @@ class CalidadFaretCatalog {
       'MARIA CARDENAS',
       'Otros',
     ],
+    '13-CORTE Y DIMENSIONADO': [
+      'ALFREDO NAVARRETE',
+      'JOSE HERNANDEZ',
+      'JUAN PLAZA',
+      'MARCELO ROMO',
+      'RICARDO PALMA',
+      'Otros',
+    ],
   };
 
   static const Map<String, List<String>> maquinasPorArea = {
-    '02-LAMINADO': ['AQUA 120 STEINEMANN'],
+    '02-LAMINADO': ['AQUA 120 STEINEMANN', 'SIRYUS'],
     '03-OFFSET': [
       'CD 102 4-L',
       'KBA 145 / 164',
@@ -95,6 +115,12 @@ class CalidadFaretCatalog {
       'DIANA PRO 3',
     ],
     '12-FOLLETOS': ['FOLLETOS TI 36/4', 'FOLLETOS TI 36/6'],
+    '13-CORTE Y DIMENSIONADO': [
+      'APOLLO DIMENSIONADORA',
+      'DIMENSIONADORA CHINA (EUROPA)',
+      'GUILLOTINA 1 POLAR 137',
+      'GUILLOTINA 2 POLAR 155',
+    ],
   };
 
   static const Map<String, List<String>> defectosPorArea = {

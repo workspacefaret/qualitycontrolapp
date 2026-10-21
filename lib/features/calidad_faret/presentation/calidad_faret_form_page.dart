@@ -649,7 +649,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                               _dropdown(
                                 label: 'Área del defecto',
                                 value: _selectedAreaDefecto,
-                                items: CalidadFaretCatalog.areasControl,
+                                items: CalidadFaretCatalog.areasConDefectos,
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedAreaDefecto = value;
