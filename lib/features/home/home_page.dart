@@ -150,22 +150,54 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<Map<String, dynamic>?> _findOfflineQrContext(
+  Future<List<Map<String, dynamic>>> _findOfflineQrContexts(
     String codigoQr,
   ) async {
     final qrContexts = await _offlineCatalogStore.getQrContexts();
 
-    try {
-      final item = qrContexts.firstWhere(
-        (item) =>
-            item['codigoQr'].toString().trim().toUpperCase() ==
-            codigoQr.trim().toUpperCase(),
-      );
+    return qrContexts
+        .where(
+          (item) =>
+              item['codigoQr'].toString().trim().toUpperCase() ==
+              codigoQr.trim().toUpperCase(),
+        )
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
 
-      return Map<String, dynamic>.from(item as Map);
-    } catch (_) {
-      return null;
-    }
+  Future<Map<String, dynamic>?> _elegirProcesoParaQr(
+    BuildContext context,
+    List<Map<String, dynamic>> qrContexts,
+  ) {
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1F2A33),
+          title: const Text(
+            'Seleccionar proceso',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            '${qrContexts.first['machineName']} tiene más de un proceso. ¿Cuál proceso vas a controlar?',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            ...qrContexts.map(
+              (item) => TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(item),
+                child: Text(item['processName'].toString()),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(null),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _loadPendingCount() async {
@@ -317,15 +349,15 @@ class _HomePageState extends State<HomePage> {
       if (qrCode == null || qrCode.trim().isEmpty) {
         return;
       }
-      Map<String, dynamic>? qrContext;
+      List<Map<String, dynamic>> qrContextList = [];
 
       final cleanQrCode = qrCode.trim();
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
       if (shouldUseOffline) {
-        qrContext = await _findOfflineQrContext(cleanQrCode);
+        qrContextList = await _findOfflineQrContexts(cleanQrCode);
 
-        if (qrContext != null && mounted) {
+        if (qrContextList.isNotEmpty && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('QR cargado sin conexión'),
@@ -334,11 +366,11 @@ class _HomePageState extends State<HomePage> {
         }
       } else {
         try {
-          qrContext = await _controlApi.obtenerContextoPorQr(cleanQrCode);
+          qrContextList = await _controlApi.obtenerContextoPorQr(cleanQrCode);
         } catch (_) {
-          qrContext = await _findOfflineQrContext(cleanQrCode);
+          qrContextList = await _findOfflineQrContexts(cleanQrCode);
 
-          if (qrContext != null && mounted) {
+          if (qrContextList.isNotEmpty && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('QR cargado sin conexión'),
@@ -348,10 +380,23 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      if (qrContext == null) {
+      if (qrContextList.isEmpty) {
         throw Exception(
           'QR no encontrado online nix offline',
         );
+      }
+
+      Map<String, dynamic>? qrContext;
+
+      if (qrContextList.length == 1) {
+        qrContext = qrContextList.first;
+      } else {
+        if (!mounted) return;
+        qrContext = await _elegirProcesoParaQr(context, qrContextList);
+
+        if (qrContext == null) {
+          return;
+        }
       }
       debugPrint('QR DEBUG machine: ${qrContext['machineName']}');
       debugPrint(

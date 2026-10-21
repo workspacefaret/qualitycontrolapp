@@ -36,6 +36,20 @@ class _ControlFormPageState extends State<ControlFormPage> {
   final TextEditingController _observationController = TextEditingController();
   final TextEditingController _wasteQuantityController =
       TextEditingController();
+  final TextEditingController _humedadBobinaController =
+      TextEditingController();
+  final TextEditingController _humedadLinerIzquierdaController =
+      TextEditingController();
+  final TextEditingController _humedadLinerCentroController =
+      TextEditingController();
+  final TextEditingController _humedadLinerDerechaController =
+      TextEditingController();
+  final TextEditingController _humedadOndaIzquierdaController =
+      TextEditingController();
+  final TextEditingController _humedadOndaCentroController =
+      TextEditingController();
+  final TextEditingController _humedadOndaDerechaController =
+      TextEditingController();
 
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -62,6 +76,10 @@ class _ControlFormPageState extends State<ControlFormPage> {
     'No Conforme',
   ];
 
+  bool get _mostrarHumedad =>
+      widget.controlContext.processId == 1 &&
+      widget.controlContext.operatorArea == 'PRODUCCION INNPACK';
+
   List<String> get _wasteTypes {
     if (widget.controlContext.processId == 1) {
       return [
@@ -85,6 +103,13 @@ class _ControlFormPageState extends State<ControlFormPage> {
     _npController.dispose();
     _observationController.dispose();
     _wasteQuantityController.dispose();
+    _humedadBobinaController.dispose();
+    _humedadLinerIzquierdaController.dispose();
+    _humedadLinerCentroController.dispose();
+    _humedadLinerDerechaController.dispose();
+    _humedadOndaIzquierdaController.dispose();
+    _humedadOndaCentroController.dispose();
+    _humedadOndaDerechaController.dispose();
     super.dispose();
   }
 
@@ -377,6 +402,26 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
             ? _wasteQuantityController.text
             : null,
+        'humedadBobina':
+            _mostrarHumedad ? _humedadBobinaController.text.trim() : null,
+        'humedadLinerIzquierda': _mostrarHumedad
+            ? _humedadLinerIzquierdaController.text.trim()
+            : null,
+        'humedadLinerCentro': _mostrarHumedad
+            ? _humedadLinerCentroController.text.trim()
+            : null,
+        'humedadLinerDerecha': _mostrarHumedad
+            ? _humedadLinerDerechaController.text.trim()
+            : null,
+        'humedadOndaIzquierda': _mostrarHumedad
+            ? _humedadOndaIzquierdaController.text.trim()
+            : null,
+        'humedadOndaCentro': _mostrarHumedad
+            ? _humedadOndaCentroController.text.trim()
+            : null,
+        'humedadOndaDerecha': _mostrarHumedad
+            ? _humedadOndaDerechaController.text.trim()
+            : null,
       };
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
@@ -501,6 +546,26 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
             ? _wasteQuantityController.text
             : null,
+        'humedadBobina':
+            _mostrarHumedad ? _humedadBobinaController.text.trim() : null,
+        'humedadLinerIzquierda': _mostrarHumedad
+            ? _humedadLinerIzquierdaController.text.trim()
+            : null,
+        'humedadLinerCentro': _mostrarHumedad
+            ? _humedadLinerCentroController.text.trim()
+            : null,
+        'humedadLinerDerecha': _mostrarHumedad
+            ? _humedadLinerDerechaController.text.trim()
+            : null,
+        'humedadOndaIzquierda': _mostrarHumedad
+            ? _humedadOndaIzquierdaController.text.trim()
+            : null,
+        'humedadOndaCentro': _mostrarHumedad
+            ? _humedadOndaCentroController.text.trim()
+            : null,
+        'humedadOndaDerecha': _mostrarHumedad
+            ? _humedadOndaDerechaController.text.trim()
+            : null,
       };
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
@@ -590,6 +655,29 @@ class _ControlFormPageState extends State<ControlFormPage> {
           productCode: _productCode,
           productDescription: _productDescription,
           origenId: _selectedOrigenId,
+        ),
+      ),
+    );
+  }
+
+  Widget _humedadField(TextEditingController controller, String label) {
+    return TextField(
+      controller: controller,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(
+          color: Color(0xFFB0BEC5),
+        ),
+        enabledBorder: const OutlineInputBorder(
+          borderSide: BorderSide(
+            color: Color(0xFF546E7A),
+          ),
+        ),
+        focusedBorder: const OutlineInputBorder(
+          borderSide: BorderSide(
+            color: Color(0xFF8BC34A),
+          ),
         ),
       ),
     );
@@ -1543,6 +1631,77 @@ class _ControlFormPageState extends State<ControlFormPage> {
                           ],
                         ),
                       ),
+                      if (_mostrarHumedad) ...[
+                        const SizedBox(height: 16),
+                        _SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'Humedad',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _humedadField(
+                                _humedadBobinaController,
+                                'Humedad Bobina',
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Liner',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFB0BEC5),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _humedadField(
+                                _humedadLinerIzquierdaController,
+                                'Izquierda',
+                              ),
+                              const SizedBox(height: 12),
+                              _humedadField(
+                                _humedadLinerCentroController,
+                                'Centro',
+                              ),
+                              const SizedBox(height: 12),
+                              _humedadField(
+                                _humedadLinerDerechaController,
+                                'Derecha',
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Onda',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFFB0BEC5),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _humedadField(
+                                _humedadOndaIzquierdaController,
+                                'Izquierda',
+                              ),
+                              const SizedBox(height: 12),
+                              _humedadField(
+                                _humedadOndaCentroController,
+                                'Centro',
+                              ),
+                              const SizedBox(height: 12),
+                              _humedadField(
+                                _humedadOndaDerechaController,
+                                'Derecha',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 64,

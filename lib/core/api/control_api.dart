@@ -10,12 +10,15 @@ class ControlApi {
   final ApiClient _apiClient = ApiClient();
   final OfflineCatalogStore _offlineCatalogStore = OfflineCatalogStore();
 
-  Future<Map<String, dynamic>> obtenerContextoPorQr(String codigoQr) async {
+  Future<List<Map<String, dynamic>>> obtenerContextoPorQr(
+    String codigoQr,
+  ) async {
     final response = await _apiClient.get('/control/contexto/$codigoQr');
 
-    if (response is Map<String, dynamic> &&
-        response['data'] is Map<String, dynamic>) {
-      return response['data'];
+    if (response is Map<String, dynamic> && response['data'] is List) {
+      return List<Map<String, dynamic>>.from(
+        (response['data'] as List).map((item) => Map<String, dynamic>.from(item)),
+      );
     }
 
     throw Exception('Respuesta inválida al obtener contexto QR');
