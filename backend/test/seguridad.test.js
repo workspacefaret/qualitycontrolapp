@@ -297,12 +297,22 @@ test('cliente antiguo: envío sin clientId y sin Authorization sigue funcionando
 test('limitador de envíos: tras superar el umbral por IP responde 429; los GET públicos no cuentan', async () => {
     const { limitarSolicitudes, _reiniciar } = require('../src/middleware/limiteSolicitudes');
     process.env.LIMITE_POST_POR_MIN = '3'; _reiniciar();
-    const a = express(); a.set('trust proxy', 'loopback'); a.post('/x', limitarSolicitudes, (q, s) => s.json({ ok: true })); a.get('/x', (q, s) => s.json({ ok: true }));
+    const a = express(); a.set('trust proxy', false); a.use((q, s, n) => { Object.defineProperty(q, 'ip', { value: '10.1.2.3' }); n(); }); a.post('/x', limitarSolicitudes, (q, s) => s.json({ ok: true })); a.get('/x', (q, s) => s.json({ ok: true }));
     const s = http.createServer(a); await new Promise((r) => s.listen(0, '127.0.0.1', r));
     const u = `http://127.0.0.1:${s.address().port}/x`;
     try {
         const estados = []; for (let i = 0; i < 5; i++) estados.push((await fetch(u, { method: 'POST' })).status);
         assert.deepStrictEqual(estados, [200, 200, 200, 429, 429]);
         assert.strictEqual((await fetch(u)).status, 200);
+    } finally { s.close(); process.env.LIMITE_POST_POR_MIN = '0'; }
+});
+
+test('limitador: sin IP real del cliente (solo loopback) no limita para no bloquear a toda la planta', async () => {
+    const { limitarSolicitudes, _reiniciar } = require('../src/middleware/limiteSolicitudes');
+    process.env.LIMITE_POST_POR_MIN = '2'; _reiniciar();
+    const a = express(); a.post('/x', limitarSolicitudes, (q, s) => s.json({ ok: true }));
+    const s = http.createServer(a); await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    try {
+        for (let i = 0; i < 6; i++) assert.strictEqual((await fetch(`http://127.0.0.1:${s.address().port}/x`, { method: 'POST' })).status, 200);
     } finally { s.close(); process.env.LIMITE_POST_POR_MIN = '0'; }
 });

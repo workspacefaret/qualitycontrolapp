@@ -15,6 +15,9 @@ const limitarSolicitudes = (req, res, next) => {
 
     const ahora = Date.now();
     const ip = req.ip || 'desconocida';
+    // Si el proxy (IIS/ARR) no entrega la IP real del cliente, todos los envíos parecerían venir de 127.0.0.1: no se limita
+    // (un contador compartido bloquearía a toda la planta). Verificar que ARR envíe X-Forwarded-For antes de confiar en este límite.
+    if (/^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(ip)) return next();
     let c = contadores.get(ip);
     if (!c || ahora - c.inicio >= VENTANA_MS) {
         c = { inicio: ahora, n: 0 };
