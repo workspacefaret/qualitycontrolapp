@@ -41,7 +41,16 @@ app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+// Solo se sirven imágenes y PDF (todo el histórico es .jpg/.jpeg/.png); cualquier otra extensión (html, svg, js...) da 404
+// y el navegador no puede reinterpretar el tipo ni ejecutar el contenido.
+app.use('/uploads', (req, res, next) => {
+  if (!/\.(jpe?g|png|pdf)$/i.test(req.path)) return res.status(404).end();
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+  });
+  next();
+}, express.static('uploads', { index: false, dotfiles: 'ignore' }));
 
 const PORT = process.env.PORT || 3000;
 
