@@ -1,5 +1,6 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 const fs = require('fs');
+const { borrarArchivos } = require('../utils/uploads');
 
 const crearRegistroProductoTerminado = async (req, res) => {
     const poolConn = await getCalidadSqlServerPool();
@@ -50,6 +51,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
             !tamanoMuestra ||
             !resultado
         ) {
+            borrarArchivos(req);
             return res.status(400).json({
                 ok: false,
                 message: 'Faltan datos obligatorios de la inspección',
@@ -60,6 +62,7 @@ const crearRegistroProductoTerminado = async (req, res) => {
         const archivos = Array.isArray(req.files) ? req.files : [];
 
         if (hallazgosArray.length !== archivos.length) {
+            borrarArchivos(req);
             return res.status(400).json({
                 ok: false,
                 message:
