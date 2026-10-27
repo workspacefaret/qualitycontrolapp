@@ -82,8 +82,8 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
     });
 
-    test('el tope de tamaño coincide con el del backend (10 MB)', () {
-      expect(maxBytesEvidencia, 10 * 1024 * 1024);
+    test('el tope de tamaño coincide con el del backend (25 MB)', () {
+      expect(maxBytesEvidencia, 25 * 1024 * 1024);
     });
   });
 }

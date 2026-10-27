@@ -5,7 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 
-const MAX_BYTES = 10 * 1024 * 1024;
+// 25 MB por archivo: cubre fotos de cámara de alta resolución sin reducirlas (histórico real: máx. 8 MB). multer escribe en disco
+// en streaming, por lo que el tamaño de un archivo no consume memoria del proceso.
+const MAX_BYTES = 25 * 1024 * 1024;
 
 // tipo de contenido real -> extensión canónica con la que se guarda (la extensión del cliente no se usa)
 const EXTENSION_POR_TIPO = { jpeg: '.jpg', png: '.png', pdf: '.pdf' };
@@ -38,8 +40,19 @@ const crearUpload = (uploadDir) => {
             destination: (req, file, cb) => cb(null, uploadDir),
             filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}.upload`),
         }),
-        limits: { fileSize: MAX_BYTES },
+        limits: { fileSize: MAX_BYTES + 1 }, // multer rechaza al alcanzar el límite: +1 para aceptar exactamente 25 MB
     });
+};
+
+// Antes de multer: rechaza de inmediato una petición cuyo tamaño declarado excede el total permitido (archivos x 25 MB),
+// para que una combinación de archivos no agote disco ni ancho de banda.
+const limitarPeticion = (maxBytes) => (req, res, next) => {
+    const declarado = parseInt(req.headers['content-length'], 10);
+    if (Number.isFinite(declarado) && declarado > maxBytes) {
+        res.set('Connection', 'close');
+        return res.status(413).json({ ok: false, message: `La solicitud supera el máximo de ${Math.round(maxBytes / 1024 / 1024)} MB.` });
+    }
+    next();
 };
 
 // Después de multer: el contenido debe ser JPG, PNG o PDF reales; el archivo se renombra con la extensión
@@ -79,7 +92,7 @@ const validarContenido = (req, res, next) => {
 const manejarErroresUpload = (err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         const mensajes = {
-            LIMIT_FILE_SIZE: 'El archivo supera el máximo de 10 MB.',
+            LIMIT_FILE_SIZE: 'El archivo supera el máximo de 25 MB.',
             LIMIT_UNEXPECTED_FILE: 'Se enviaron más archivos de los permitidos.',
             LIMIT_FILE_COUNT: 'Se enviaron más archivos de los permitidos.',
         };
@@ -94,4 +107,4 @@ const normalizarClientId = (valor) => {
     return /^[A-Za-z0-9-]{8,36}$/.test(texto) ? texto : null;
 };
 
-module.exports = { MAX_BYTES, crearUpload, validarContenido, manejarErroresUpload, borrarArchivos, normalizarClientId, detectarTipo };
+module.exports = { limitarPeticion, MAX_BYTES, crearUpload, validarContenido, manejarErroresUpload, borrarArchivos, normalizarClientId, detectarTipo };

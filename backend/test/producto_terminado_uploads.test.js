@@ -70,8 +70,8 @@ test('SVG y .html se rechazan', async () => {
     }
 });
 
-test('foto de más de 10 MB responde 413', async () => {
-    const grande = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(10 * 1024 * 1024 + 10, 1)]);
+test('foto de más de 25 MB responde 413', async () => {
+    const grande = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(25 * 1024 * 1024 + 10, 1)]);
     assert.strictEqual((await enviar([['g.jpg', grande]])).status, 413);
 });
 

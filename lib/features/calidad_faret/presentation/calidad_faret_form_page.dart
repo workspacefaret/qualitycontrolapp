@@ -80,9 +80,6 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
 
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 75,
-      maxWidth: 1600,
-      maxHeight: 1600,
     );
 
     if (photo == null) return;
@@ -90,7 +87,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
     final bytes = await photo.readAsBytes();
 
     if (bytes.length > maxBytesEvidencia) {
-      _showSnack('La foto supera el máximo de 10 MB');
+      _showSnack('La foto supera el máximo de 25 MB');
       return;
     }
 
@@ -121,7 +118,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
         if (file.bytes == null) continue;
 
         if (file.bytes!.length > maxBytesEvidencia) {
-          _showSnack('"${file.name}" supera el máximo de 10 MB y no se adjuntó');
+          _showSnack('"${file.name}" supera el máximo de 25 MB y no se adjuntó');
           continue;
         }
 
@@ -747,7 +744,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                             ),
                             const SizedBox(height: 8),
                             const Text(
-                              'Opcional. Hasta 5 fotos (defectos o mediciones densitométricas) o archivos PDF/JPG/PNG, máx. 10 MB c/u.',
+                              'Opcional. Hasta 5 fotos (defectos o mediciones densitométricas) o archivos PDF/JPG/PNG, máx. 25 MB c/u.',
                               style: TextStyle(color: Color(0xFFB0BEC5)),
                             ),
                             const SizedBox(height: 12),

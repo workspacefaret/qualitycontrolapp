@@ -130,12 +130,12 @@ test('PDF válido se acepta', async () => {
     assert.strictEqual(r.status, 201);
 });
 
-test('archivo mayor a 10 MB -> 413 con mensaje claro y sin residuos', async () => {
+test('archivo mayor a 25 MB -> 413 con mensaje claro y sin residuos', async () => {
     const antesN = listar('calidad_faret').length;
-    const grande = Buffer.concat([JPEG, Buffer.alloc(11 * 1024 * 1024, 7)]);
+    const grande = Buffer.concat([JPEG, Buffer.alloc(26 * 1024 * 1024, 7)]);
     const r = await quiet(() => enviar('/calidad-faret/registros', 'archivos', faretPayload(), [{ nombre: 'grande.jpg', data: grande }]));
     assert.strictEqual(r.status, 413);
-    assert.match(r.body.message, /10 MB/);
+    assert.match(r.body.message, /25 MB/);
     assert.strictEqual(listar('calidad_faret').length, antesN);
 });
 

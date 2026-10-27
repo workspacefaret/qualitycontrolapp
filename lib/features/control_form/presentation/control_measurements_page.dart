@@ -160,9 +160,6 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
   Future<void> _takePhoto() async {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 75,
-      maxWidth: 1600,
-      maxHeight: 1600,
     );
 
     if (photo == null) return;
@@ -172,7 +169,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     if (bytes.length > maxBytesEvidencia) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La foto supera el máximo de 10 MB')),
+        const SnackBar(content: Text('La foto supera el máximo de 25 MB')),
       );
       return;
     }
@@ -196,7 +193,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     if (result.files.single.bytes!.length > maxBytesEvidencia) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El archivo supera el máximo de 10 MB')),
+        const SnackBar(content: Text('El archivo supera el máximo de 25 MB')),
       );
       return;
     }

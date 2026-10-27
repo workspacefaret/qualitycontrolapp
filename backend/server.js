@@ -13,6 +13,9 @@ const calidadFaretOperadoresRoutes = require('./src/routes/calidadFaretOperadore
 const ordenFabricacionRoutes = require('./src/routes/ordenFabricacion.routes');
 const bobinaRoutes = require('./src/routes/bobina.routes');
 const productoTerminadoRoutes = require('./src/routes/productoTerminado.routes');
+const adjuntosRoutes = require('./src/routes/adjuntos.routes');
+const { uploadsAcceso } = require('./src/middleware/uploadsAcceso');
+const { limitarSolicitudes } = require('./src/middleware/limiteSolicitudes');
 
 const app = express();
 
@@ -40,17 +43,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
+app.set('trust proxy', 'loopback'); // IIS/ARR en el mismo equipo: req.ip toma la IP real de X-Forwarded-For
 app.use(express.json());
-// Solo se sirven imágenes y PDF (todo el histórico es .jpg/.jpeg/.png); cualquier otra extensión (html, svg, js...) da 404
-// y el navegador no puede reinterpretar el tipo ni ejecutar el contenido.
-app.use('/uploads', (req, res, next) => {
-  if (!/\.(jpe?g|png|pdf)$/i.test(req.path)) return res.status(404).end();
-  res.set({
-    'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'; sandbox",
-  });
-  next();
-}, express.static('uploads', { index: false, dotfiles: 'ignore' }));
+app.post(/.*/, limitarSolicitudes); // control anti-abuso de las operaciones públicas de envío
+// Solo imágenes/PDF, con URL firmada o según UPLOADS_MODO (ver src/middleware/uploadsAcceso.js).
+app.use('/uploads', uploadsAcceso, express.static('uploads', { index: false, dotfiles: 'ignore' }));
 
 const PORT = process.env.PORT || 3000;
 
@@ -76,6 +73,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+app.use('/api/adjuntos', adjuntosRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/control', controlRoutes);
 app.use('/api/calidad-faret/operadores', calidadFaretOperadoresRoutes);

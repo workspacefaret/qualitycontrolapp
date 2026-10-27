@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 /// Tamaño máximo por archivo de evidencia (el backend rechaza lo que lo supere).
-const int maxBytesEvidencia = 10 * 1024 * 1024;
+const int maxBytesEvidencia = 25 * 1024 * 1024;
 
 /// Vista previa de una evidencia antes de guardar: miniatura si es imagen, ícono si es PDF.
 class EvidenciaMiniatura extends StatelessWidget {
