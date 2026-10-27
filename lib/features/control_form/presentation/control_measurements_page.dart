@@ -25,6 +25,7 @@ class ControlMeasurementsPage extends StatefulWidget {
   final String? productCode;
   final String? productDescription;
   final String? origenId;
+  final String? operadorMaquinaId;
 
   const ControlMeasurementsPage({
     super.key,
@@ -42,6 +43,7 @@ class ControlMeasurementsPage extends StatefulWidget {
     this.productCode,
     this.productDescription,
     this.origenId,
+    this.operadorMaquinaId,
   });
 
   @override
@@ -273,6 +275,9 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       'cantidadMerma': widget.cantidadMerma,
       'origenId':
           widget.origenId != null ? int.tryParse(widget.origenId!) : null,
+      'operadorMaquinaId': widget.operadorMaquinaId != null
+          ? int.tryParse(widget.operadorMaquinaId!)
+          : null,
       'bobinas': widget.bobinas,
     };
 

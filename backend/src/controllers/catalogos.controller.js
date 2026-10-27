@@ -241,6 +241,16 @@ const getCatalogoOffline = async (req, res) => {
   ORDER BY proceso_id ASC, nombre ASC
 `);
 
+        const operadoresMaquinaResult = await pool.request().query(`
+  SELECT
+    id,
+    proceso_id,
+    nombre
+  FROM operadores_maquina
+  WHERE activo = 1
+  ORDER BY proceso_id ASC, nombre ASC
+`);
+
         const usuarios = usuariosResult.recordset;
         const contextos = contextosResult.recordset;
         const parametrosVisuales = parametrosVisualesResult.recordset;
@@ -248,6 +258,7 @@ const getCatalogoOffline = async (req, res) => {
         const materiales = materialesResult.recordset;
         const ensayosLaboratorio = ensayosLaboratorioResult.recordset;
         const origenesProblema = origenesProblemaResult.recordset;
+        const operadoresMaquina = operadoresMaquinaResult.recordset;
 
         const qrContexts = contextos.map((contexto) => ({
             ...contexto,
@@ -258,6 +269,10 @@ const getCatalogoOffline = async (req, res) => {
 
             origenesProblema: origenesProblema.filter(
                 (origen) => origen.proceso_id === contexto.processId
+            ),
+
+            operadoresMaquina: operadoresMaquina.filter(
+                (operador) => operador.proceso_id === contexto.processId
             ),
 
             tiposOnda:

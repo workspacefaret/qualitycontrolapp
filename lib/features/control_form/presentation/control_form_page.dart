@@ -59,6 +59,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
   bool _visualValidatedWithoutFailures = false;
   String? _selectedVisualControlResult;
   String? _selectedOrigenId;
+  String? _selectedOperadorMaquinaId;
   String? _selectedTipoOndaId;
   bool _hasWaste = false;
   String? _selectedWasteType;
@@ -75,6 +76,10 @@ class _ControlFormPageState extends State<ControlFormPage> {
     'Conforme',
     'No Conforme',
   ];
+
+  int? get _operadorMaquinaIdValue => _selectedOperadorMaquinaId != null
+      ? int.tryParse(_selectedOperadorMaquinaId!)
+      : null;
 
   bool get _mostrarHumedad =>
       widget.controlContext.processId == 1 &&
@@ -396,6 +401,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'observacion': _observationController.text.trim(),
         'fallasVisuales': [],
         'origenId': null,
+        'operadorMaquinaId': _operadorMaquinaIdValue,
         'bobinas': _bobinasEscaneadas,
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
@@ -540,6 +546,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
             .toList(),
         'origenId':
             _selectedOrigenId != null ? int.tryParse(_selectedOrigenId!) : null,
+        'operadorMaquinaId': _operadorMaquinaIdValue,
         'bobinas': _bobinasEscaneadas,
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
@@ -655,6 +662,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
           productCode: _productCode,
           productDescription: _productDescription,
           origenId: _selectedOrigenId,
+          operadorMaquinaId: _selectedOperadorMaquinaId,
         ),
       ),
     );
@@ -810,6 +818,63 @@ class _ControlFormPageState extends State<ControlFormPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      if (widget.controlContext.operadoresMaquina
+                          .isNotEmpty) ...[
+                        _SectionCard(
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedOperadorMaquinaId,
+                            isExpanded: true,
+                            dropdownColor: const Color(0xFFEEF3F5),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            selectedItemBuilder: (context) {
+                              return widget.controlContext.operadoresMaquina
+                                  .map((item) {
+                                return Text(
+                                  item['nombre'].toString(),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                );
+                              }).toList();
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Operador de máquina',
+                              labelStyle: TextStyle(color: Color(0xFFB0BEC5)),
+                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(color: Color(0xFF546E7A)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(color: Color(0xFF8BC34A)),
+                              ),
+                            ),
+                            items: widget.controlContext.operadoresMaquina
+                                .map(
+                                  (item) => DropdownMenuItem<String>(
+                                    value: item['id'].toString(),
+                                    child: Text(
+                                      item['nombre'].toString(),
+                                      style: const TextStyle(
+                                        color: Color(0xFF263238),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedOperadorMaquinaId = value;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       _SectionCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,

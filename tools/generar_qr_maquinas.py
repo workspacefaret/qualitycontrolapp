@@ -95,6 +95,42 @@ maquinas = [
         'proceso': 'TROQUELADO',
         'archivo': 'qr_iberica_tr105',
     },
+    {
+        'codigo_qr': 'MAQ-TRO-104-1',
+        'nombre_maquina': 'TROQUELADO 104-1',
+        'proceso': 'TROQUELADO',
+        'archivo': 'qr_troquelado_104_1',
+    },
+    {
+        'codigo_qr': 'MAQ-TRO-104-2',
+        'nombre_maquina': 'TROQUELADO 104-2',
+        'proceso': 'TROQUELADO',
+        'archivo': 'qr_troquelado_104_2',
+    },
+    {
+        'codigo_qr': 'MAQ-TRO-106-1',
+        'nombre_maquina': 'TROQUELADO 106-1',
+        'proceso': 'TROQUELADO',
+        'archivo': 'qr_troquelado_106_1',
+    },
+    {
+        'codigo_qr': 'MAQ-TRO-106-2',
+        'nombre_maquina': 'TROQUELADO 106-2',
+        'proceso': 'TROQUELADO',
+        'archivo': 'qr_troquelado_106_2',
+    },
+    {
+        'codigo_qr': 'MAQ-TRO-144-1',
+        'nombre_maquina': 'TROQUELADO 144-1',
+        'proceso': 'TROQUELADO',
+        'archivo': 'qr_troquelado_144_1',
+    },
+    {
+        'codigo_qr': 'MAQ-TRO-144-2',
+        'nombre_maquina': 'TROQUELADO 144-2',
+        'proceso': 'TROQUELADO',
+        'archivo': 'qr_troquelado_144_2',
+    },
 
     # =========================
     # PEGADO
@@ -111,6 +147,54 @@ maquinas = [
         'nombre_maquina': 'PEGADO MANUAL',
         'proceso': 'PEGADO',
         'archivo': 'qr_pegado_manual',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-FARM-PRO-1',
+        'nombre_maquina': 'FARMACEUTICO PRO-1',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_farm_pro_1',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-FARM-PRO-2',
+        'nombre_maquina': 'FARMACEUTICO PRO-2',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_farm_pro_2',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-FARM-PRO-3',
+        'nombre_maquina': 'FARMACEUTICO PRO-3',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_farm_pro_3',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-IND-ALPINA',
+        'nombre_maquina': 'INDUSTRIAL ALPINA',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_ind_alpina',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-IND-EXPERTFOLD',
+        'nombre_maquina': 'INDUSTRIAL EXPERTFOLD',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_ind_expertfold',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-IND-DIANA-3',
+        'nombre_maquina': 'INDUSTRIAL DIANA-3',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_ind_diana_3',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-IND-DIANA-5',
+        'nombre_maquina': 'INDUSTRIAL DIANA-5',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_ind_diana_5',
+    },
+    {
+        'codigo_qr': 'MAQ-PEG-IND-DIANA-7',
+        'nombre_maquina': 'INDUSTRIAL DIANA-7',
+        'proceso': 'PEGADO',
+        'archivo': 'qr_pegado_ind_diana_7',
     },
 
     # =========================

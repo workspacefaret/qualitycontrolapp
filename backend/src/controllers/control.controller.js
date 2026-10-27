@@ -114,10 +114,27 @@ const getContextoPorQr = async (req, res) => {
                     );
                 const origenesProblema = origenesProblemaResult.recordset;
 
+                const operadoresMaquinaResult = await poolConn.request()
+                    .input('processId', sql.Int, contexto.processId)
+                    .query(
+                        `
+                    SELECT
+                      id,
+                      proceso_id,
+                      nombre
+                    FROM operadores_maquina
+                    WHERE activo = 1
+                      AND proceso_id = @processId
+                    ORDER BY nombre ASC
+                    `
+                    );
+                const operadoresMaquina = operadoresMaquinaResult.recordset;
+
                 return {
                     ...contexto,
                     parametrosVisuales,
                     origenesProblema,
+                    operadoresMaquina,
                     tiposOnda: contexto.processId === 1 ? tiposOnda : [],
                     materiales,
                     ensayosLaboratorio,
@@ -178,6 +195,7 @@ const crearRegistroControl = async (req, res) => {
             ensayosLaboratorio,
             bobinas,
             origenId,
+            operadorMaquinaId,
             humedadBobina,
             humedadLinerIzquierda,
             humedadLinerCentro,
@@ -224,6 +242,31 @@ const crearRegistroControl = async (req, res) => {
         const humedadOndaCentroFinal = mostrarHumedad ? humedadOndaCentro || null : null;
         const humedadOndaDerechaFinal = mostrarHumedad ? humedadOndaDerecha || null : null;
 
+        let operadorMaquinaIdFinal = null;
+        if (operadorMaquinaId) {
+            const operadorResult = await poolConn.request()
+                .input('operadorMaquinaId', sql.Int, operadorMaquinaId)
+                .input('procesoId', sql.Int, procesoId)
+                .query(
+                    `
+                SELECT id
+                FROM operadores_maquina
+                WHERE id = @operadorMaquinaId
+                  AND proceso_id = @procesoId
+                `
+                );
+
+            // Campo opcional: si no corresponde al proceso se guarda sin operador (no se rechaza la
+            // inspección; un registro offline rechazado bloquearía la cola de sincronización).
+            if (operadorResult.recordset.length === 0) {
+                console.warn(
+                    `operadorMaquinaId ${operadorMaquinaId} no corresponde al proceso ${procesoId}; se guarda sin operador`
+                );
+            } else {
+                operadorMaquinaIdFinal = operadorMaquinaId;
+            }
+        }
+
         await transaction.begin();
 
         const registroResult = await new sql.Request(transaction)
@@ -247,6 +290,7 @@ const crearRegistroControl = async (req, res) => {
             .input('tipoMerma', sql.NVarChar(150), tipoMerma || null)
             .input('cantidadMerma', sql.Decimal(10, 2), cantidadMerma || null)
             .input('origenId', sql.Int, origenId || null)
+            .input('operadorMaquinaId', sql.Int, operadorMaquinaIdFinal)
             .input('humedadBobina', sql.NVarChar(50), humedadBobinaFinal)
             .input('humedadLinerIzquierda', sql.NVarChar(50), humedadLinerIzquierdaFinal)
             .input('humedadLinerCentro', sql.NVarChar(50), humedadLinerCentroFinal)
@@ -278,6 +322,7 @@ const crearRegistroControl = async (req, res) => {
               tipo_merma,
               cantidad_merma,
               origen_id,
+              operador_maquina_id,
               humedad_bobina,
               humedad_liner_izquierda,
               humedad_liner_centro,
@@ -291,7 +336,7 @@ const crearRegistroControl = async (req, res) => {
             OUTPUT INSERTED.id
             VALUES (@usuarioId, @procesoId, @maquinaId, @formularioId, @area, @np, @cliente, @codigoProducto,
               @descripcionProducto, @tipoOndaId, @mermaInsumos, @mermaProceso, @turno, @estadoId, @observacion,
-              @requiereEnsayoLaboratorio, @requiereMerma, @tipoMerma, @cantidadMerma, @origenId, @humedadBobina,
+              @requiereEnsayoLaboratorio, @requiereMerma, @tipoMerma, @cantidadMerma, @origenId, @operadorMaquinaId, @humedadBobina,
               @humedadLinerIzquierda, @humedadLinerCentro, @humedadLinerDerecha, @humedadOndaIzquierda,
               @humedadOndaCentro, @humedadOndaDerecha, CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
             `

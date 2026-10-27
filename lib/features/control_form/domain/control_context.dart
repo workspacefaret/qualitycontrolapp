@@ -18,6 +18,7 @@ class ControlContext {
   final List<Map<String, dynamic>> materiales;
   final List<Map<String, dynamic>> ensayosLaboratorio;
   final List<Map<String, dynamic>> origenesProblema;
+  final List<Map<String, dynamic>> operadoresMaquina;
 
   const ControlContext({
     required this.machineId,
@@ -34,5 +35,6 @@ class ControlContext {
     this.materiales = const [],
     this.ensayosLaboratorio = const [],
     this.origenesProblema = const [],
+    this.operadoresMaquina = const [],
   });
 }

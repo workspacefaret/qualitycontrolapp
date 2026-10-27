@@ -430,6 +430,9 @@ class _HomePageState extends State<HomePage> {
         origenesProblema: List<Map<String, dynamic>>.from(
           qrContext['origenesProblema'] ?? [],
         ),
+        operadoresMaquina: List<Map<String, dynamic>>.from(
+          qrContext['operadoresMaquina'] ?? [],
+        ),
       );
 
       await Navigator.push(
