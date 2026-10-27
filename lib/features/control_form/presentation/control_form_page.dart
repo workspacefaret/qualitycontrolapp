@@ -8,7 +8,9 @@ import '../../../core/api/control_api.dart';
 import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
+import '../../../core/utils/client_id.dart';
 import '../../../core/utils/turno_calculator.dart';
+import '../../../core/widgets/evidencia_miniatura.dart';
 import '../domain/bobina_qr_parser.dart';
 import '../domain/control_context.dart';
 import 'bobina_qr_scanner_page.dart';
@@ -53,6 +55,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
   final ImagePicker _imagePicker = ImagePicker();
 
+  final String _clientId = generarClientId();
   Uint8List? _selectedAttachmentBytes;
   String? _selectedAttachmentName;
   final Set<String> _selectedFailures = {};
@@ -300,11 +303,21 @@ class _ControlFormPageState extends State<ControlFormPage> {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
       imageQuality: 75,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
 
     if (photo == null) return;
 
     final bytes = await photo.readAsBytes();
+
+    if (bytes.length > maxBytesEvidencia) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La foto supera el máximo de 10 MB')),
+      );
+      return;
+    }
 
     setState(() {
       _selectedAttachmentBytes = bytes;
@@ -321,6 +334,14 @@ class _ControlFormPageState extends State<ControlFormPage> {
     );
 
     if (result == null || result.files.single.bytes == null) return;
+
+    if (result.files.single.bytes!.length > maxBytesEvidencia) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El archivo supera el máximo de 10 MB')),
+      );
+      return;
+    }
 
     setState(() {
       _selectedAttachmentBytes = result.files.single.bytes;
@@ -402,6 +423,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'fallasVisuales': [],
         'origenId': null,
         'operadorMaquinaId': _operadorMaquinaIdValue,
+        'clientId': _clientId,
         'bobinas': _bobinasEscaneadas,
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
@@ -547,6 +569,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'origenId':
             _selectedOrigenId != null ? int.tryParse(_selectedOrigenId!) : null,
         'operadorMaquinaId': _operadorMaquinaIdValue,
+        'clientId': _clientId,
         'bobinas': _bobinasEscaneadas,
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
@@ -663,6 +686,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
           productDescription: _productDescription,
           origenId: _selectedOrigenId,
           operadorMaquinaId: _selectedOperadorMaquinaId,
+          clientId: _clientId,
         ),
       ),
     );
@@ -1254,6 +1278,11 @@ class _ControlFormPageState extends State<ControlFormPage> {
                               onChanged: (value) {
                                 setState(() {
                                   _selectedVisualControlResult = value;
+                                  // Calidad/No Conforme adjunta en la página siguiente: no arrastrar una foto oculta.
+                                  if (!isProduction && value != 'Conforme') {
+                                    _selectedAttachmentBytes = null;
+                                    _selectedAttachmentName = null;
+                                  }
 
                                   if (value == 'Conforme') {
                                     _selectedFailures.clear();
@@ -1441,7 +1470,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      if (isProduction) ...[
+                      if (isProduction ||
+                          _selectedVisualControlResult == 'Conforme') ...[
                         _SectionCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1455,9 +1485,12 @@ class _ControlFormPageState extends State<ControlFormPage> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text(
-                                'Adjunte foto o archivo PDF/JPG/PNG. Obligatoria si el resultado es No Conforme.',
-                                style: TextStyle(color: Color(0xFFB0BEC5)),
+                              Text(
+                                isProduction
+                                    ? 'Adjunte foto o archivo PDF/JPG/PNG. Obligatoria si el resultado es No Conforme.'
+                                    : 'Opcional. Adjunte foto (p. ej. mediciones) o archivo PDF/JPG/PNG, máx. 10 MB.',
+                                style:
+                                    const TextStyle(color: Color(0xFFB0BEC5)),
                               ),
                               const SizedBox(height: 12),
                               OutlinedButton.icon(
@@ -1493,6 +1526,16 @@ class _ControlFormPageState extends State<ControlFormPage> {
                               ),
                               if (_selectedAttachmentName != null) ...[
                                 const SizedBox(height: 12),
+                                if (_selectedAttachmentBytes != null)
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: EvidenciaMiniatura(
+                                      bytes: _selectedAttachmentBytes!,
+                                      nombre: _selectedAttachmentName!,
+                                      size: 96,
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
                                 Text(
                                   'Archivo: $_selectedAttachmentName',
                                   style: const TextStyle(

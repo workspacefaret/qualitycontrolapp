@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api/calidad_faret_api.dart';
 import '../../../core/network/network_mode_service.dart';
+import '../../../core/utils/client_id.dart';
+import '../../../core/widgets/evidencia_miniatura.dart';
 import '../domain/calidad_faret_catalog.dart';
 
 class CalidadFaretFormPage extends StatefulWidget {
@@ -21,6 +23,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   final CalidadFaretApi _calidadFaretApi = CalidadFaretApi();
   final NetworkModeService _networkModeService = NetworkModeService();
   final ImagePicker _imagePicker = ImagePicker();
+  final String _clientId = generarClientId();
 
   final TextEditingController _nvFaretController = TextEditingController();
   final TextEditingController _nPliegoController = TextEditingController();
@@ -78,11 +81,18 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
       imageQuality: 75,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
 
     if (photo == null) return;
 
     final bytes = await photo.readAsBytes();
+
+    if (bytes.length > maxBytesEvidencia) {
+      _showSnack('La foto supera el máximo de 10 MB');
+      return;
+    }
 
     setState(() {
       _attachmentsBytes.add(bytes);
@@ -109,6 +119,11 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
       for (final file in result.files) {
         if (_attachmentsBytes.length >= 5) break;
         if (file.bytes == null) continue;
+
+        if (file.bytes!.length > maxBytesEvidencia) {
+          _showSnack('"${file.name}" supera el máximo de 10 MB y no se adjuntó');
+          continue;
+        }
 
         _attachmentsBytes.add(file.bytes!);
         _attachmentsNames.add(file.name);
@@ -231,6 +246,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
           : null,
       'accionCorrectiva':
           _presentaDefectos ? _accionCorrectivaController.text.trim() : null,
+      'clientId': _clientId,
     };
 
     setState(() {
@@ -705,94 +721,6 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                         ),
                         const SizedBox(height: 16),
                         _SectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'Evidencia del defecto',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Puede adjuntar hasta 5 fotos o archivos PDF/JPG/PNG.',
-                                style: TextStyle(color: Color(0xFFB0BEC5)),
-                              ),
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: _takePhoto,
-                                icon: const Icon(Icons.camera_alt),
-                                label: const Text('Tomar foto'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                  ),
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(
-                                    color: Color(0xFF8BC34A),
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              OutlinedButton.icon(
-                                onPressed: _pickFiles,
-                                icon: const Icon(Icons.attach_file),
-                                label: const Text('Seleccionar archivos'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                  ),
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(
-                                    color: Color(0xFF8BC34A),
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                              ),
-                              if (_attachmentsNames.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                for (var i = 0;
-                                    i < _attachmentsNames.length;
-                                    i++)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 6),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            _attachmentsNames[i],
-                                            style: const TextStyle(
-                                              color: Color(0xFFCFD8DC),
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          onPressed: () =>
-                                              _removeAttachment(i),
-                                          icon: const Icon(
-                                            Icons.close,
-                                            color: Color(0xFFFFCC80),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _SectionCard(
                           child: TextField(
                             controller: _accionCorrectivaController,
                             maxLines: 3,
@@ -804,7 +732,100 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
+                      _SectionCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Evidencia fotográfica',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Opcional. Hasta 5 fotos (defectos o mediciones densitométricas) o archivos PDF/JPG/PNG, máx. 10 MB c/u.',
+                              style: TextStyle(color: Color(0xFFB0BEC5)),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: _takePhoto,
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Tomar foto'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Color(0xFF8BC34A),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: _pickFiles,
+                              icon: const Icon(Icons.attach_file),
+                              label: const Text('Seleccionar archivos'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(
+                                  color: Color(0xFF8BC34A),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                            ),
+                            if (_attachmentsNames.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              for (var i = 0;
+                                  i < _attachmentsNames.length;
+                                  i++)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    children: [
+                                      EvidenciaMiniatura(
+                                        bytes: _attachmentsBytes[i],
+                                        nombre: _attachmentsNames[i],
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          _attachmentsNames[i],
+                                          style: const TextStyle(
+                                            color: Color(0xFFCFD8DC),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: () =>
+                                            _removeAttachment(i),
+                                        icon: const Icon(
+                                          Icons.close,
+                                          color: Color(0xFFFFCC80),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ],
+                        ),
+                      ),
+                                            const SizedBox(height: 20),
                       SizedBox(
                         height: 64,
                         child: ElevatedButton(

@@ -1,7 +1,7 @@
 const express = require('express');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
+
+const { crearUpload, validarContenido, manejarErroresUpload } = require('../utils/uploads');
 
 const router = express.Router();
 
@@ -14,35 +14,15 @@ const {
     eliminarRegistroCalidadFaret,
 } = require('../controllers/calidadFaret.controller');
 
-const uploadDir = path.join(__dirname, '../../uploads/calidad_faret');
+const upload = crearUpload(path.join(__dirname, '../../uploads/calidad_faret'));
 
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
-        cb(null, uniqueName);
-    },
-});
-
-const upload = multer({
-    storage,
-    limits: {
-        fileSize: 10 * 1024 * 1024,
-    },
-});
-
-router.post('/registros', upload.array('archivos', 5), crearRegistroCalidadFaret);
+router.post('/registros', upload.array('archivos', 5), validarContenido, crearRegistroCalidadFaret);
 router.get('/registros', listarRegistrosCalidadFaret);
 router.get('/resumen', obtenerResumenCalidadFaret);
 router.get('/maquinas/resumen', obtenerResumenMaquinasCalidadFaret);
 router.get('/registros/:id/adjuntos', listarAdjuntosRegistroCalidadFaret);
 router.delete('/registros/:id', eliminarRegistroCalidadFaret);
+
+router.use(manejarErroresUpload);
 
 module.exports = router;

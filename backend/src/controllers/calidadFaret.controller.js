@@ -1,9 +1,10 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
-const fs = require('fs');
+const { borrarArchivos, normalizarClientId } = require('../utils/uploads');
 
 const crearRegistroCalidadFaret = async (req, res) => {
     const poolConn = await getCalidadSqlServerPool();
     const transaction = new sql.Transaction(poolConn);
+    let clientUuidEnvio = null;
 
     try {
         let body = req.body;
@@ -30,13 +31,33 @@ const crearRegistroCalidadFaret = async (req, res) => {
             defectos,
             tipoFolia,
             accionCorrectiva,
+            clientId,
         } = body;
 
         if (!nvFaret || !areaControl || !operador || !maquina) {
+            borrarArchivos(req);
             return res.status(400).json({
                 ok: false,
                 message: 'Faltan datos obligatorios del formulario',
             });
+        }
+
+        // Reintento del mismo envío (la app reenvía el mismo clientId): no se duplica el registro.
+        const clientUuid = normalizarClientId(clientId);
+        clientUuidEnvio = clientUuid;
+        if (clientUuid) {
+            const previo = await poolConn.request()
+                .input('clientUuid', sql.NVarChar(36), clientUuid)
+                .query('SELECT id FROM registros_calidad_faret WHERE client_uuid = @clientUuid');
+            if (previo.recordset.length > 0) {
+                borrarArchivos(req);
+                return res.status(200).json({
+                    ok: true,
+                    duplicado: true,
+                    message: 'Registro de calidad Faret ya guardado',
+                    data: { registroId: previo.recordset[0].id },
+                });
+            }
         }
 
         await transaction.begin();
@@ -58,6 +79,7 @@ const crearRegistroCalidadFaret = async (req, res) => {
             .input('areaDefecto', sql.NVarChar(50), presentaDefectos ? areaDefecto || null : null)
             .input('tipoFolia', sql.NVarChar(150), presentaDefectos ? tipoFolia || null : null)
             .input('accionCorrectiva', sql.NVarChar(sql.MAX), presentaDefectos ? accionCorrectiva || null : null)
+            .input('clientUuid', sql.NVarChar(36), clientUuid)
             .query(
                 `
             INSERT INTO registros_calidad_faret
@@ -78,13 +100,14 @@ const crearRegistroCalidadFaret = async (req, res) => {
               area_defecto,
               tipo_folia,
               accion_correctiva,
+              client_uuid,
               fecha_registro,
               hora_registro
             )
             OUTPUT INSERTED.id
             VALUES (@nvFaret, @nvVoBoAprobado, @nPliego, @nPasada, @nItem, @pliegoControlN, @observaciones,
               @areaControl, @operador, @operadorOtro, @operadorRegistro, @maquina, @presentaDefectos,
-              @areaDefecto, @tipoFolia, @accionCorrectiva, CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
+              @areaDefecto, @tipoFolia, @accionCorrectiva, @clientUuid, CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
             `
             );
 
@@ -170,12 +193,23 @@ const crearRegistroCalidadFaret = async (req, res) => {
             await transaction.rollback();
         } catch (_) { }
 
-        if (Array.isArray(req.files)) {
-            for (const archivo of req.files) {
-                try {
-                    fs.unlinkSync(archivo.path);
-                } catch (_) { }
-            }
+        borrarArchivos(req);
+
+        // Dos reintentos simultáneos con el mismo clientId: el índice único deja pasar solo uno.
+        if ((error.number === 2601 || error.number === 2627) && clientUuidEnvio) {
+            try {
+                const previo = await poolConn.request()
+                    .input('clientUuid', sql.NVarChar(36), clientUuidEnvio)
+                    .query('SELECT id FROM registros_calidad_faret WHERE client_uuid = @clientUuid');
+                if (previo.recordset.length > 0) {
+                    return res.status(200).json({
+                        ok: true,
+                        duplicado: true,
+                        message: 'Registro de calidad Faret ya guardado',
+                        data: { registroId: previo.recordset[0].id },
+                    });
+                }
+            } catch (_) { }
         }
 
         console.error('Error al guardar registro calidad Faret:', error);

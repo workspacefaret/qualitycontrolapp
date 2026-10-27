@@ -7,6 +7,7 @@ import '../../../core/api/control_api.dart';
 import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/local/pending_records_store.dart';
 import '../../../core/network/network_mode_service.dart';
+import '../../../core/widgets/evidencia_miniatura.dart';
 import '../../../core/utils/turno_calculator.dart';
 import '../domain/control_context.dart';
 
@@ -26,6 +27,7 @@ class ControlMeasurementsPage extends StatefulWidget {
   final String? productDescription;
   final String? origenId;
   final String? operadorMaquinaId;
+  final String? clientId;
 
   const ControlMeasurementsPage({
     super.key,
@@ -44,6 +46,7 @@ class ControlMeasurementsPage extends StatefulWidget {
     this.productDescription,
     this.origenId,
     this.operadorMaquinaId,
+    this.clientId,
   });
 
   @override
@@ -158,11 +161,21 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
       imageQuality: 75,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
 
     if (photo == null) return;
 
     final bytes = await photo.readAsBytes();
+
+    if (bytes.length > maxBytesEvidencia) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La foto supera el máximo de 10 MB')),
+      );
+      return;
+    }
 
     setState(() {
       _selectedAttachmentBytes = bytes;
@@ -179,6 +192,14 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
     );
 
     if (result == null || result.files.single.bytes == null) return;
+
+    if (result.files.single.bytes!.length > maxBytesEvidencia) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El archivo supera el máximo de 10 MB')),
+      );
+      return;
+    }
 
     setState(() {
       _selectedAttachmentBytes = result.files.single.bytes;
@@ -278,6 +299,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
       'operadorMaquinaId': widget.operadorMaquinaId != null
           ? int.tryParse(widget.operadorMaquinaId!)
           : null,
+      'clientId': widget.clientId,
       'bobinas': widget.bobinas,
     };
 
@@ -615,6 +637,16 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
                             ),
                             if (_selectedAttachmentName != null) ...[
                               const SizedBox(height: 12),
+                              if (_selectedAttachmentBytes != null)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: EvidenciaMiniatura(
+                                    bytes: _selectedAttachmentBytes!,
+                                    nombre: _selectedAttachmentName!,
+                                    size: 96,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
                               Text(
                                 'Archivo: $_selectedAttachmentName',
                                 style: const TextStyle(

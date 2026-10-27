@@ -1,5 +1,5 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
-const fs = require('fs');
+const { borrarArchivos, normalizarClientId } = require('../utils/uploads');
 
 
 const getContextoPorQr = async (req, res) => {
@@ -159,6 +159,7 @@ const getContextoPorQr = async (req, res) => {
 const crearRegistroControl = async (req, res) => {
     const poolConn = await getCalidadSqlServerPool();
     const transaction = new sql.Transaction(poolConn);
+    let clientUuidEnvio = null;
 
     try {
         console.log('==========================');
@@ -196,6 +197,7 @@ const crearRegistroControl = async (req, res) => {
             bobinas,
             origenId,
             operadorMaquinaId,
+            clientId,
             humedadBobina,
             humedadLinerIzquierda,
             humedadLinerCentro,
@@ -206,6 +208,7 @@ const crearRegistroControl = async (req, res) => {
         } = body;
 
         if (!usuarioId || !procesoId || !maquinaId || !turno || !resultadoVisual) {
+            borrarArchivos(req);
             return res.status(400).json({
                 ok: false,
                 message: 'Faltan datos obligatorios del control',
@@ -221,6 +224,7 @@ const crearRegistroControl = async (req, res) => {
         const estadoId = estadoIdPorResultado[resultadoVisual];
 
         if (!estadoId) {
+            borrarArchivos(req);
             return res.status(400).json({
                 ok: false,
                 message: 'Resultado visual inválido',
@@ -241,6 +245,28 @@ const crearRegistroControl = async (req, res) => {
         const humedadOndaIzquierdaFinal = mostrarHumedad ? humedadOndaIzquierda || null : null;
         const humedadOndaCentroFinal = mostrarHumedad ? humedadOndaCentro || null : null;
         const humedadOndaDerechaFinal = mostrarHumedad ? humedadOndaDerecha || null : null;
+
+        // Reintento del mismo envío (la app reenvía el mismo clientId): no se duplica el registro.
+        const clientUuid = normalizarClientId(clientId);
+        clientUuidEnvio = clientUuid;
+        const registroExistente = async () => {
+            if (!clientUuid) return null;
+            const r = await poolConn.request()
+                .input('clientUuid', sql.NVarChar(36), clientUuid)
+                .query('SELECT id FROM registros_control WHERE client_uuid = @clientUuid');
+            return r.recordset.length > 0 ? r.recordset[0].id : null;
+        };
+        const respuestaDuplicado = (registroId) => {
+            borrarArchivos(req);
+            return res.status(200).json({
+                ok: true,
+                duplicado: true,
+                message: 'Control ya registrado',
+                data: { registroId, estadoId },
+            });
+        };
+        const idPrevio = await registroExistente();
+        if (idPrevio) return respuestaDuplicado(idPrevio);
 
         let operadorMaquinaIdFinal = null;
         if (operadorMaquinaId) {
@@ -291,6 +317,7 @@ const crearRegistroControl = async (req, res) => {
             .input('cantidadMerma', sql.Decimal(10, 2), cantidadMerma || null)
             .input('origenId', sql.Int, origenId || null)
             .input('operadorMaquinaId', sql.Int, operadorMaquinaIdFinal)
+            .input('clientUuid', sql.NVarChar(36), clientUuid)
             .input('humedadBobina', sql.NVarChar(50), humedadBobinaFinal)
             .input('humedadLinerIzquierda', sql.NVarChar(50), humedadLinerIzquierdaFinal)
             .input('humedadLinerCentro', sql.NVarChar(50), humedadLinerCentroFinal)
@@ -323,6 +350,7 @@ const crearRegistroControl = async (req, res) => {
               cantidad_merma,
               origen_id,
               operador_maquina_id,
+              client_uuid,
               humedad_bobina,
               humedad_liner_izquierda,
               humedad_liner_centro,
@@ -336,7 +364,7 @@ const crearRegistroControl = async (req, res) => {
             OUTPUT INSERTED.id
             VALUES (@usuarioId, @procesoId, @maquinaId, @formularioId, @area, @np, @cliente, @codigoProducto,
               @descripcionProducto, @tipoOndaId, @mermaInsumos, @mermaProceso, @turno, @estadoId, @observacion,
-              @requiereEnsayoLaboratorio, @requiereMerma, @tipoMerma, @cantidadMerma, @origenId, @operadorMaquinaId, @humedadBobina,
+              @requiereEnsayoLaboratorio, @requiereMerma, @tipoMerma, @cantidadMerma, @origenId, @operadorMaquinaId, @clientUuid, @humedadBobina,
               @humedadLinerIzquierda, @humedadLinerCentro, @humedadLinerDerecha, @humedadOndaIzquierda,
               @humedadOndaCentro, @humedadOndaDerecha, CAST(GETDATE() AS DATE), CAST(GETDATE() AS TIME(0)))
             `
@@ -473,9 +501,22 @@ const crearRegistroControl = async (req, res) => {
             await transaction.rollback();
         } catch (_) { }
 
-        if (req.file && req.file.path) {
+        borrarArchivos(req);
+
+        // Dos reintentos simultáneos con el mismo clientId: el índice único deja pasar solo uno.
+        if ((error.number === 2601 || error.number === 2627) && clientUuidEnvio) {
             try {
-                fs.unlinkSync(req.file.path);
+                const previo = await poolConn.request()
+                    .input('clientUuid', sql.NVarChar(36), clientUuidEnvio)
+                    .query('SELECT id FROM registros_control WHERE client_uuid = @clientUuid');
+                if (previo.recordset.length > 0) {
+                    return res.status(200).json({
+                        ok: true,
+                        duplicado: true,
+                        message: 'Control ya registrado',
+                        data: { registroId: previo.recordset[0].id },
+                    });
+                }
             } catch (_) { }
         }
 
