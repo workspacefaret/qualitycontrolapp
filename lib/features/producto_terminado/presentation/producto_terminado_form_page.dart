@@ -8,6 +8,7 @@ import '../../../core/api/catalogos_api.dart';
 import '../../../core/api/orden_fabricacion_api.dart';
 import '../../../core/api/producto_terminado_api.dart';
 import '../../../core/utils/turno_calculator.dart';
+import '../../../core/widgets/evidencia_miniatura.dart';
 import '../domain/nch44_calculator.dart';
 import '../domain/nch44_tables.dart';
 
@@ -282,12 +283,19 @@ class _ProductoTerminadoFormPageState
   Future<void> _tomarFotoHallazgo(_Hallazgo hallazgo) async {
     final XFile? photo = await _imagePicker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 75,
     );
 
     if (photo == null) return;
 
     final bytes = await photo.readAsBytes();
+
+    if (bytes.length > maxBytesEvidencia) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La foto supera el máximo de 25 MB')),
+      );
+      return;
+    }
 
     setState(() {
       hallazgo.fotoBytes = bytes;
@@ -304,6 +312,14 @@ class _ProductoTerminadoFormPageState
     );
 
     if (result == null || result.files.single.bytes == null) return;
+
+    if (result.files.single.bytes!.length > maxBytesEvidencia) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La foto supera el máximo de 25 MB')),
+      );
+      return;
+    }
 
     setState(() {
       hallazgo.fotoBytes = result.files.single.bytes;
