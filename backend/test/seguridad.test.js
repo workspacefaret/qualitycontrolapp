@@ -125,7 +125,11 @@ test('token expirado, malformado o revocado: 401; usuario sin rol de lectura: 40
     assert.strictEqual((await get('/api/calidad-faret/registros/1/adjuntos', 'basura')).status, 401);
     assert.strictEqual((await get('/api/calidad-faret/registros/1/adjuntos', jwt("REVOCADO"))).status, 401);
     assert.strictEqual((await get('/api/calidad-faret/registros/1/adjuntos', jwt('F_SINROL'))).status, 403);
-    assert.strictEqual((await get('/api/calidad-faret/registros/1/adjuntos', jwt('I_OPERADOR'))).status, 403);
+});
+
+test('rol operador de INNPACK: puede consultar (como hoy en Desktop/Web) pero no borrar', async () => {
+    assert.strictEqual((await get('/api/calidad-faret/registros/1/adjuntos', jwt('I_OPERADOR'))).status, 200);
+    assert.strictEqual((await del('/api/calidad-faret/registros/9', jwt('I_OPERADOR'))).status, 403);
 });
 
 test('API de autenticación caída: falla cerrado (503), no concede acceso', async () => {

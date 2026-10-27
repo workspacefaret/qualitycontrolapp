@@ -16,7 +16,8 @@ const MAX_CACHE = 500;
 // Los nombres de rol difieren entre APIs (ADMIN/CALIDAD/INSPECTOR/CONSULTA en Faret; admin/admin_ti/calidad/inspector/consulta
 // en INNPACK): se normalizan a mayúsculas. Borrar = misma regla que el gateway QCC Web (admin, admin_ti, calidad).
 const PERMISOS = {
-    leer: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD', 'INSPECTOR', 'CONSULTA']),
+    // OPERADOR: rol de las sesiones INNPACK del Desktop/Web (ROLES_INNPACK = admin, admin_ti, operador); ya ven estos registros hoy.
+    leer: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD', 'INSPECTOR', 'CONSULTA', 'OPERADOR']),
     borrar: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD']),
 };
 
