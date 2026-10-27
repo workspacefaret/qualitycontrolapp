@@ -307,6 +307,31 @@ test('limitador de envíos: tras superar el umbral por IP responde 429; los GET 
     } finally { s.close(); process.env.LIMITE_POST_POR_MIN = '0'; }
 });
 
+test('limitador con ARR: X-Forwarded-For "ip:puerto" se cuenta por IP; entradas falsificadas por el cliente se ignoran; otra IP no se afecta', async () => {
+    const { limitarSolicitudes, _reiniciar } = require('../src/middleware/limiteSolicitudes');
+    process.env.LIMITE_POST_POR_MIN = '3'; _reiniciar();
+    const a = express(); a.set('trust proxy', 'loopback'); a.post('/x', limitarSolicitudes, (q, s) => s.json({ ok: true }));
+    const s = http.createServer(a); await new Promise((r) => s.listen(0, '127.0.0.1', r));
+    const u = `http://127.0.0.1:${s.address().port}/x`;
+    const post = async (xff) => (await fetch(u, { method: 'POST', headers: { 'X-Forwarded-For': xff } })).status;
+    try {
+        const estados = [];
+        // Mismo cliente real (192.168.1.50), puerto de origen distinto en cada conexión y una IP falsa distinta al inicio de la cadena.
+        for (let i = 0; i < 5; i++) estados.push(await post(`6.6.6.${i}, 192.168.1.50:${50000 + i}`));
+        assert.deepStrictEqual(estados, [200, 200, 200, 429, 429]);
+        assert.strictEqual(await post('192.168.1.51:40000'), 200);
+    } finally { s.close(); process.env.LIMITE_POST_POR_MIN = '0'; }
+});
+
+test('ipCliente: quita el puerto de IPv4 e IPv6 y deja intactas las IP sin puerto', () => {
+    const { ipCliente } = require('../src/middleware/limiteSolicitudes');
+    assert.strictEqual(ipCliente({ ip: '192.168.1.50:51234' }), '192.168.1.50');
+    assert.strictEqual(ipCliente({ ip: '[2001:db8::1]:443' }), '2001:db8::1');
+    assert.strictEqual(ipCliente({ ip: '10.0.0.7' }), '10.0.0.7');
+    assert.strictEqual(ipCliente({ ip: '::ffff:10.0.0.7' }), '::ffff:10.0.0.7');
+    assert.strictEqual(ipCliente({}), '');
+});
+
 test('limitador: sin IP real del cliente (solo loopback) no limita para no bloquear a toda la planta', async () => {
     const { limitarSolicitudes, _reiniciar } = require('../src/middleware/limiteSolicitudes');
     process.env.LIMITE_POST_POR_MIN = '2'; _reiniciar();

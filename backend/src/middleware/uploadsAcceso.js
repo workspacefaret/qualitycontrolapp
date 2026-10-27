@@ -1,5 +1,6 @@
 const { rutaSegura, verificar } = require('../utils/urlsFirmadas');
 const { modo } = require('./auth');
+const { ipCliente } = require('./limiteSolicitudes');
 
 // Solo se sirven imágenes y PDF (todo el histórico es .jpg/.jpeg/.png); cualquier otra extensión (html, svg, js...) da 404
 // y el navegador no puede reinterpretar el tipo ni ejecutar el contenido.
@@ -13,13 +14,13 @@ const uploadsAcceso = (req, res, next) => {
 
   const estado = verificar(ruta, req.query.exp, req.query.sig);
   if (estado === 'invalida' || estado === 'expirada') {
-    console.log(JSON.stringify({ t: new Date().toISOString(), evento: 'uploads_firma_' + estado, ruta, ip: req.ip }));
+    console.log(JSON.stringify({ t: new Date().toISOString(), evento: 'uploads_firma_' + estado, ruta, ip: ipCliente(req) }));
     return res.status(403).json({ ok: false, message: 'Enlace inválido o vencido.' });
   }
   if (estado === 'sin_firma') {
     const m = modo('UPLOADS_MODO');
     if (m === 'exigir') return res.status(401).json({ ok: false, message: 'Autenticación requerida.' });
-    if (m === 'observar') console.log(JSON.stringify({ t: new Date().toISOString(), evento: 'uploads_sin_firma', ruta, ip: req.ip }));
+    if (m === 'observar') console.log(JSON.stringify({ t: new Date().toISOString(), evento: 'uploads_sin_firma', ruta, ip: ipCliente(req) }));
   }
   res.set({
     'X-Content-Type-Options': 'nosniff',

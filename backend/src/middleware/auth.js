@@ -5,6 +5,7 @@
 // Los formularios de inspección (POST, catálogos, contexto QR) NO usan este middleware: siguen anónimos.
 // Modos por operación (variables de entorno): off | observar (registra y deja pasar) | exigir (401/403/503).
 const crypto = require('crypto');
+const { ipCliente } = require('./limiteSolicitudes');
 
 const URL_FARET = (process.env.AUTH_FARET_URL || 'https://api.faret.cl/qualitycontrol').replace(/\/+$/, '');
 const URL_INNPACK = (process.env.AUTH_INNPACK_URL || 'https://api.faret.cl/innpack').replace(/\/+$/, '');
@@ -91,7 +92,7 @@ const validarToken = async (token) => {
 
 const auditar = (req, evento, extra = {}) => {
     // Sin tokens ni cabeceras: solo evento, método, ruta base e identificador de usuario.
-    console.log(JSON.stringify({ t: new Date().toISOString(), evento, metodo: req.method, ruta: req.baseUrl + req.path.replace(/\/\d+/g, '/:id'), ip: req.ip, ...extra }));
+    console.log(JSON.stringify({ t: new Date().toISOString(), evento, metodo: req.method, ruta: req.baseUrl + req.path.replace(/\/\d+/g, '/:id'), ip: ipCliente(req), ...extra }));
 };
 
 // permiso: 'leer' | 'borrar'; nombreModo: variable de entorno que fija off/observar/exigir para esa operación.
