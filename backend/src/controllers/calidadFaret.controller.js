@@ -1,5 +1,6 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 const { borrarArchivos, normalizarClientId } = require('../utils/uploads');
+const { ErrorValidacion, resolverDefectos, obtenerCatalogo, esErrorTriggerEvento } = require('../utils/eventosCalidadFaret');
 
 const crearRegistroCalidadFaret = async (req, res) => {
     const poolConn = await getCalidadSqlServerPool();
@@ -60,6 +61,9 @@ const crearRegistroCalidadFaret = async (req, res) => {
             }
         }
 
+        // Defectos: texto legado y/o {idEvento}. Texto y criticidad salen del catálogo en SQL Server (nunca del cliente).
+        const defectosResueltos = presentaDefectos ? await resolverDefectos(poolConn, defectos, areaDefecto) : [];
+
         await transaction.begin();
 
         const registroResult = await new sql.Request(transaction)
@@ -113,18 +117,30 @@ const crearRegistroCalidadFaret = async (req, res) => {
 
         const registroId = registroResult.recordset[0].id;
 
-        if (presentaDefectos && Array.isArray(defectos) && defectos.length > 0) {
-            for (const defecto of defectos) {
-                await new sql.Request(transaction)
-                    .input('registroId', sql.Int, registroId)
-                    .input('defecto', sql.NVarChar(150), defecto)
+        for (const defecto of defectosResueltos) {
+            const peticion = new sql.Request(transaction)
+                .input('registroId', sql.Int, registroId)
+                .input('defecto', sql.NVarChar(150), defecto.texto);
+            if (defecto.idEvento) {
+                await peticion
+                    .input('idEvento', sql.NVarChar(10), defecto.idEvento)
+                    .input('criticidad', sql.NVarChar(10), defecto.criticidad)
                     .query(
                         `
+                    INSERT INTO registro_calidad_faret_defectos
+                    (registro_id, defecto, id_evento, criticidad)
+                    VALUES (@registroId, @defecto, @idEvento, @criticidad)
+                    `
+                    );
+            } else {
+                // Cliente sin catálogo: mismo INSERT de siempre (funciona también si la 010 se revirtiera).
+                await peticion.query(
+                    `
                     INSERT INTO registro_calidad_faret_defectos
                     (registro_id, defecto)
                     VALUES (@registroId, @defecto)
                     `
-                    );
+                );
             }
         }
 
@@ -212,6 +228,14 @@ const crearRegistroCalidadFaret = async (req, res) => {
             } catch (_) { }
         }
 
+        if (error instanceof ErrorValidacion) {
+            return res.status(error.status).json({ ok: false, message: error.message });
+        }
+        if (esErrorTriggerEvento(error)) {
+            // El evento dejó de estar operable (o no corresponde al área) entre la validación y el INSERT.
+            return res.status(400).json({ ok: false, message: 'El evento de calidad ya no está disponible; actualice el catálogo' });
+        }
+
         console.error('Error al guardar registro calidad Faret:', error);
 
         res.status(500).json({
@@ -219,6 +243,21 @@ const crearRegistroCalidadFaret = async (req, res) => {
             message: 'Error al guardar registro',
             error: error.message,
         });
+    }
+};
+
+// Catálogo público y de solo lectura (sin datos de inspecciones ni de personas): áreas activas y solo los eventos operables.
+const obtenerCatalogoEventosCalidadFaret = async (req, res) => {
+    try {
+        const catalogo = await obtenerCatalogo(await getCalidadSqlServerPool());
+        const etag = `"${catalogo.version}"`;
+        res.set('ETag', etag);
+        res.set('Cache-Control', 'no-cache');   // se puede guardar, pero siempre se revalida con If-None-Match (304)
+        if (req.headers['if-none-match'] === etag) return res.status(304).end();
+        res.json({ ok: true, data: catalogo });
+    } catch (error) {
+        console.error('Error al consultar el catálogo de eventos Faret:', error.message);
+        res.status(503).json({ ok: false, message: 'Catálogo de eventos no disponible' });
     }
 };
 
@@ -551,6 +590,7 @@ const eliminarRegistroCalidadFaret = async (req, res) => {
 };
 
 module.exports = {
+    obtenerCatalogoEventosCalidadFaret,
     crearRegistroCalidadFaret,
     listarRegistrosCalidadFaret,
     obtenerResumenCalidadFaret,
