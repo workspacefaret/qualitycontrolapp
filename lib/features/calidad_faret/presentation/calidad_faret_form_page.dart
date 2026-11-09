@@ -5,10 +5,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api/calidad_faret_api.dart';
+import '../../../core/api/calidad_faret_eventos_api.dart';
 import '../../../core/network/network_mode_service.dart';
 import '../../../core/utils/client_id.dart';
 import '../../../core/widgets/evidencia_miniatura.dart';
 import '../domain/calidad_faret_catalog.dart';
+import '../domain/catalogo_eventos_faret.dart';
 
 class CalidadFaretFormPage extends StatefulWidget {
   final String operador;
@@ -21,6 +23,7 @@ class CalidadFaretFormPage extends StatefulWidget {
 
 class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   final CalidadFaretApi _calidadFaretApi = CalidadFaretApi();
+  final CalidadFaretEventosApi _eventosApi = CalidadFaretEventosApi();
   final NetworkModeService _networkModeService = NetworkModeService();
   final ImagePicker _imagePicker = ImagePicker();
   final String _clientId = generarClientId();
@@ -45,13 +48,46 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
 
   bool _presentaDefectos = false;
   String? _selectedAreaDefecto;
+  // idEvento de los eventos del catálogo oficial seleccionados.
   final Set<String> _selectedDefectos = {};
+  CatalogoEventosFaret? _catalogoEventos;
+  bool _cargandoCatalogo = true;
   String? _selectedTipoFolia;
 
   final List<Uint8List> _attachmentsBytes = [];
   final List<String> _attachmentsNames = [];
 
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarCatalogoEventos();
+  }
+
+  Future<void> _cargarCatalogoEventos() async {
+    setState(() {
+      _cargandoCatalogo = true;
+    });
+    CatalogoEventosFaret? catalogo;
+    try {
+      catalogo = (await _eventosApi.obtenerCatalogo()).catalogo;
+    } catch (_) {
+      catalogo = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _catalogoEventos = catalogo;
+      _cargandoCatalogo = false;
+      // Descarta selecciones que ya no existan en el catálogo vigente.
+      final vigentes = catalogo
+              ?.eventosDe(_selectedAreaDefecto)
+              .map((e) => e.idEvento)
+              .toSet() ??
+          <String>{};
+      _selectedDefectos.retainAll(vigentes);
+    });
+  }
 
   @override
   void dispose() {
@@ -237,7 +273,9 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
       'maquina': _selectedMaquina,
       'presentaDefectos': _presentaDefectos,
       'areaDefecto': _presentaDefectos ? _selectedAreaDefecto : null,
-      'defectos': _presentaDefectos ? _selectedDefectos.toList() : [],
+      'defectos': _presentaDefectos
+          ? _selectedDefectos.map((id) => {'idEvento': id}).toList()
+          : [],
       'tipoFolia': _presentaDefectos && _selectedAreaDefecto == '05-FOLIA'
           ? _selectedTipoFolia
           : null,
@@ -374,10 +412,9 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
         : CalidadFaretCatalog.maquinasPorArea[_selectedAreaControl] ??
             const <String>[];
 
-    final defectosDisponibles = _selectedAreaDefecto == null
-        ? const <String>[]
-        : CalidadFaretCatalog.defectosPorArea[_selectedAreaDefecto] ??
-            const <String>[];
+    final defectosDisponibles =
+        _catalogoEventos?.eventosDe(_selectedAreaDefecto) ??
+            const <EventoFaret>[];
 
     return Scaffold(
       backgroundColor: const Color(0xFF17212B),
@@ -662,7 +699,8 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                               _dropdown(
                                 label: 'Área del defecto',
                                 value: _selectedAreaDefecto,
-                                items: CalidadFaretCatalog.areasConDefectos,
+                                items: _catalogoEventos?.areasConEventos ??
+                                    const <String>[],
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedAreaDefecto = value;
@@ -671,7 +709,20 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                                   });
                                 },
                               ),
-                              if (_selectedAreaDefecto != null) ...[
+                              if (_cargandoCatalogo) ...[
+                                const SizedBox(height: 12),
+                                const Center(child: CircularProgressIndicator()),
+                              ] else if (_catalogoEventos == null) ...[
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'No se pudo cargar el catálogo de defectos. Verifique la conexión.',
+                                  style: TextStyle(color: Color(0xFFE57373)),
+                                ),
+                                TextButton(
+                                  onPressed: _cargarCatalogoEventos,
+                                  child: const Text('Reintentar'),
+                                ),
+                              ] else if (_selectedAreaDefecto != null) ...[
                                 const SizedBox(height: 16),
                                 const Text(
                                   'Defectos encontrados',
@@ -684,16 +735,18 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                                 Wrap(
                                   spacing: 10,
                                   runSpacing: 10,
-                                  children: defectosDisponibles.map((defecto) {
-                                    final selected =
-                                        _selectedDefectos.contains(defecto);
+                                  children: defectosDisponibles.map((evento) {
+                                    final selected = _selectedDefectos
+                                        .contains(evento.idEvento);
 
-                                    return _toggleChip(defecto, selected, () {
+                                    return _toggleChip(evento.defecto, selected,
+                                        () {
                                       setState(() {
                                         if (selected) {
-                                          _selectedDefectos.remove(defecto);
+                                          _selectedDefectos
+                                              .remove(evento.idEvento);
                                         } else {
-                                          _selectedDefectos.add(defecto);
+                                          _selectedDefectos.add(evento.idEvento);
                                         }
                                       });
                                     });

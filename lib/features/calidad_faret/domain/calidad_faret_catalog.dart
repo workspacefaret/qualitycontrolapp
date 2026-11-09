@@ -12,10 +12,6 @@ class CalidadFaretCatalog {
     '13-CORTE Y DIMENSIONADO',
   ];
 
-  // Áreas que tienen defectos configurados; solo estas se ofrecen como "Área del defecto".
-  static List<String> get areasConDefectos =>
-      areasControl.where(defectosPorArea.containsKey).toList();
-
   static const Map<String, List<String>> operadoresPorArea = {
     '02-LAMINADO': [
       'ALAIN ESCORCIA',
@@ -120,72 +116,6 @@ class CalidadFaretCatalog {
       'DIMENSIONADORA CHINA (EUROPA)',
       'GUILLOTINA 1 POLAR 137',
       'GUILLOTINA 2 POLAR 155',
-    ],
-  };
-
-  static const Map<String, List<String>> defectosPorArea = {
-    '02-LAMINADO': [
-      'DEFECTO DE ANCLAJE',
-      'PROBLEMAS DE TRATAMIENTO DE CORONA',
-      'TRASLAPE',
-    ],
-    '03-OFFSET': [
-      'ABOLLADURA DE BARNIZ',
-      'ABOLLADURA DE MANTILLA DE BARNIZ',
-      'ABOLLADURA DE MANTILLA DE IMPRESIÓN',
-      'CALCE DE IMPRESIÓN',
-      'CALCE DE REGISTRO LATERAL Y FRONTAL',
-      'DEFECTO DE SECADO',
-      'DIFERENCIA DE TONO',
-      'EMPASTE',
-      'IMAGEN FANTASMA',
-      'PRESENCIA DE PIOJOS',
-      'PRESENCIA DE VELO',
-      'PROBLEMA DE CURADO',
-      'PROBLEMA DE ESTUCO',
-      'PROBLEMA DE SUSTRATO',
-      'REPINTE',
-    ],
-    '04-SERIGRAFÍA': [
-      'ABOLLADURA DE BARNIZ',
-      'CALCE DE BARNIZ',
-      'CALCE DE REGISTRO LATERAL Y FRONTAL',
-      'MALLA CON PUNTOS DE EMULSION',
-      'PROBLEMA DE CURADO',
-      'PROBLEMA DE ESTUCO',
-      'PROBLEMA DE SUSTRATO',
-      'ROTURA DE MALLA',
-    ],
-    '05-FOLIA': [
-      'ANCLAJE DE FOLIA',
-      'ASPECTO VISUAL (CLICHE CON TEXTO MUY DELGADO)',
-      'DESCALCE DE FOLIA',
-      'FOLIA PICADA',
-      'PRESIÓN DE FOLIA',
-      'TEMPERATURA DE FOLIA',
-    ],
-    '07-TROQUELADO': [
-      'ARMADO DE ESTUCHE',
-      'CALCE DE RELIEVE Y BRAILLE',
-      'CALCE DE TROQUEL E IMPRESIÓN',
-      'CALIDAD CORTE EXTERNO',
-      'CALIDAD DE PLISADO Y DEFINICION',
-      'CALIDAD DE CORTE INTERNO',
-      'CALIDAD DE PREPICADO MEDIO CORTE',
-      'PROBLEMA DE SUSTRATO',
-      'PROBLEMA DE MOLDE',
-    ],
-    '10-PEGADO': [
-      'ARRUGAS',
-      'MARCA DE CORREA',
-      'PEGADO DESVIADO',
-      'PRODUCTO CON FALTA DE ADHESIVO',
-      'REVENTON POR CORREA',
-    ],
-    '12-FOLLETOS': [
-      'CANTIDAD DE FOLLETOS POR FAJO',
-      'DOBLEZ DESVIADO',
-      'MALA ROTULACION',
     ],
   };
 
