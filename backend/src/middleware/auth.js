@@ -20,6 +20,8 @@ const PERMISOS = {
     // OPERADOR: rol de las sesiones INNPACK del Desktop/Web (ROLES_INNPACK = admin, admin_ti, operador); ya ven estos registros hoy.
     leer: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD', 'INSPECTOR', 'CONSULTA', 'OPERADOR']),
     borrar: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD']),
+    // Editar inspecciones: ADMIN, ADMIN_TI e INSPECTOR (CALIDAD solo consulta). Siempre se exige (ver `obligatorio` en autorizar).
+    editar: new Set(['ADMIN', 'ADMIN_TI', 'INSPECTOR']),
 };
 
 const modo = (nombre) => {
@@ -47,6 +49,13 @@ const rolesDeClaims = (claims) => {
     return crudos.map((r) => String(r).toUpperCase());
 };
 
+// Nombre para mostrar de quien opera (solo para la bitácora de ediciones).
+const nombreDe = (u, claims) => {
+    const c = [u.nombreCompleto, u.nombre, u.fullName, u.name, u.username, u.userName, claims.name, claims.unique_name, claims.nombre, claims.preferred_username];
+    const v = c.find((x) => typeof x === 'string' && x.trim());
+    return v ? v.trim().slice(0, 150) : null;
+};
+
 const llamar = async (url, token) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -71,12 +80,12 @@ const validarToken = async (token) => {
         const faret = await llamar(`${URL_FARET}/api/Auth/me`, token);
         if (faret.status === 200 && faret.cuerpo) {
             const u = faret.cuerpo.data || faret.cuerpo;
-            valor = { estado: 'ok', origen: 'faret', usuario: String(u.id ?? claims.sub ?? ''), roles: new Set((u.roles || []).map((r) => String(r).toUpperCase())) };
+            valor = { estado: 'ok', origen: 'faret', usuario: String(u.id ?? claims.sub ?? ''), nombre: nombreDe(u, claims), roles: new Set((u.roles || []).map((r) => String(r).toUpperCase())) };
         } else if (faret.status >= 500) {
             valor = { estado: 'error' };
         } else {
             const inn = await llamar(`${URL_INNPACK}/api/Auth/mis-permisos`, token);
-            if (inn.status === 200) valor = { estado: 'ok', origen: 'innpack', usuario: String(claims.sub ?? claims.nameid ?? ''), roles: new Set(rolesDeClaims(claims)) };
+            if (inn.status === 200) valor = { estado: 'ok', origen: 'innpack', usuario: String(claims.sub ?? claims.nameid ?? ''), nombre: nombreDe({}, claims), roles: new Set(rolesDeClaims(claims)) };
             else if (inn.status >= 500) valor = { estado: 'error' };
         }
     } catch (_) { valor = { estado: 'error' }; }
@@ -96,8 +105,9 @@ const auditar = (req, evento, extra = {}) => {
 };
 
 // permiso: 'leer' | 'borrar'; nombreModo: variable de entorno que fija off/observar/exigir para esa operación.
-const autorizar = (permiso, nombreModo) => async (req, res, next) => {
-    const m = modo(nombreModo);
+// `obligatorio`: la operación nunca queda en off/observar (edición).
+const autorizar = (permiso, nombreModo, { obligatorio = false } = {}) => async (req, res, next) => {
+    const m = obligatorio ? 'exigir' : modo(nombreModo);
     if (m === 'off') return next();
 
     const rechazar = (status, mensaje, evento, extra) => {
@@ -117,8 +127,9 @@ const autorizar = (permiso, nombreModo) => async (req, res, next) => {
     const permitidos = PERMISOS[permiso];
     if (![...r.roles].some((x) => permitidos.has(x))) return rechazar(403, 'No tiene permisos para esta operación.', 'auth_sin_permiso', { usuario: r.usuario, origen: r.origen });
 
-    req.auth = { usuario: r.usuario, roles: r.roles, origen: r.origen };
+    req.auth = { usuario: r.usuario, nombre: r.nombre, roles: r.roles, origen: r.origen };
     if (permiso === 'borrar') auditar(req, 'auth_borrado_autorizado', { usuario: r.usuario, origen: r.origen });
+    if (permiso === 'editar') auditar(req, 'auth_edicion_autorizada', { usuario: r.usuario, origen: r.origen });
     return next();
 };
 

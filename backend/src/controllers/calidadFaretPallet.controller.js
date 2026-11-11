@@ -1,4 +1,5 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
+const { auditoriaDisponible, resumenEdicionSql } = require('../utils/edicionInspecciones');
 
 const TIPOS_MATERIAL_VALIDOS = ['NV', 'PAPEL'];
 const RESULTADOS_VALIDOS = ['CUMPLE', 'NO_CUMPLE'];
@@ -297,6 +298,7 @@ const listarRegistrosCalidadFaretPallet = async (req, res) => {
             `SELECT COUNT(*) AS total FROM registros_calidad_faret_pallet r ${whereSql}`
         );
 
+        const edicionSql = (await auditoriaDisponible(poolConn)) ? resumenEdicionSql('PALLET') : '';
         const rowsResult = await aplicarInputs(poolConn.request(), inputs)
             .input('pageSize', sql.Int, pageSize)
             .input('offset', sql.Int, offset)
@@ -320,7 +322,7 @@ const listarRegistrosCalidadFaretPallet = async (req, res) => {
                 SELECT COUNT(*)
                 FROM registro_calidad_faret_pallet_respuestas resp
                 WHERE resp.registro_id = r.id AND resp.resultado = 'NO_CUMPLE'
-              ) AS totalNoCumple
+              ) AS totalNoCumple${edicionSql}
             FROM registros_calidad_faret_pallet r
             ${whereSql}
             ORDER BY r.fecha_registro DESC, r.hora_registro DESC

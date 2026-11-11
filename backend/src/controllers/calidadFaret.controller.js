@@ -1,6 +1,7 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 const { borrarArchivos, normalizarClientId } = require('../utils/uploads');
 const { ErrorValidacion, resolverDefectos, obtenerCatalogo, esErrorTriggerEvento } = require('../utils/eventosCalidadFaret');
+const { auditoriaDisponible, resumenEdicionSql } = require('../utils/edicionInspecciones');
 
 const crearRegistroCalidadFaret = async (req, res) => {
     const poolConn = await getCalidadSqlServerPool();
@@ -262,7 +263,7 @@ const obtenerCatalogoEventosCalidadFaret = async (req, res) => {
 };
 
 const buildFiltros = (query) => {
-    const { fechaDesde, fechaHasta, areaControl, operador, maquina, presentaDefectos, nvFaret } = query;
+    const { fechaDesde, fechaHasta, areaControl, operador, maquina, presentaDefectos, nvFaret, criticidad } = query;
 
     const condiciones = ['r.eliminado = 0'];
     const inputs = [];
@@ -303,6 +304,12 @@ const buildFiltros = (query) => {
         condiciones.push('r.presenta_defectos = 0');
     }
 
+    // Registros con al menos un defecto de esa criticidad (Critico / Mayor / Menor; los históricos sin criticidad no coinciden).
+    if (['Critico', 'Mayor', 'Menor'].includes(criticidad)) {
+        condiciones.push('EXISTS (SELECT 1 FROM registro_calidad_faret_defectos dc WHERE dc.registro_id = r.id AND dc.criticidad = @criticidad)');
+        inputs.push({ name: 'criticidad', type: sql.NVarChar(10), value: criticidad });
+    }
+
     return {
         whereSql: condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '',
         inputs,
@@ -330,6 +337,7 @@ const listarRegistrosCalidadFaret = async (req, res) => {
             `SELECT COUNT(*) AS total FROM registros_calidad_faret r ${whereSql}`
         );
 
+        const edicionSql = (await auditoriaDisponible(poolConn)) ? resumenEdicionSql('CALIDAD') : '';
         const rowsResult = await aplicarInputs(poolConn.request(), inputs)
             .input('pageSize', sql.Int, pageSize)
             .input('offset', sql.Int, offset)
@@ -364,10 +372,23 @@ const listarRegistrosCalidadFaret = async (req, res) => {
                 ).value('.', 'NVARCHAR(MAX)'), 1, 2, '')
               ) AS defectos,
               (
+                SELECT d3.id_evento AS idEvento, d3.defecto, d3.criticidad
+                FROM registro_calidad_faret_defectos d3
+                WHERE d3.registro_id = r.id
+                ORDER BY d3.id_evento, d3.defecto
+                FOR JSON PATH
+              ) AS defectosDetalle,
+              (
+                SELECT CASE MAX(CASE d4.criticidad WHEN N'Critico' THEN 3 WHEN N'Mayor' THEN 2 WHEN N'Menor' THEN 1 END)
+                         WHEN 3 THEN N'Critico' WHEN 2 THEN N'Mayor' WHEN 1 THEN N'Menor' END
+                FROM registro_calidad_faret_defectos d4
+                WHERE d4.registro_id = r.id
+              ) AS criticidadMax,
+              (
                 SELECT COUNT(*)
                 FROM registro_calidad_faret_adjuntos a
                 WHERE a.registro_id = r.id
-              ) AS cantidadAdjuntos
+              ) AS cantidadAdjuntos${edicionSql}
             FROM registros_calidad_faret r
             ${whereSql}
             ORDER BY r.fecha_registro DESC, r.hora_registro DESC

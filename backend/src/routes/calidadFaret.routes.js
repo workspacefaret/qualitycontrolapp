@@ -4,6 +4,7 @@ const path = require('path');
 const { crearUpload, validarContenido, manejarErroresUpload, limitarPeticion, MAX_BYTES } = require('../utils/uploads');
 const { autorizar } = require('../middleware/auth');
 const { firmarRespuesta } = require('../middleware/firmarRespuesta');
+const { actualizarRegistroCalidadFaret, auditoriaCalidadFaret } = require('../controllers/inspeccionesEdicion.controller');
 
 const router = express.Router();
 
@@ -29,6 +30,9 @@ router.get('/resumen', autorizar('leer', 'AUTH_CONSULTAS_MODO'), firmarRespuesta
 router.get('/maquinas/resumen', autorizar('leer', 'AUTH_CONSULTAS_MODO'), firmarRespuesta, obtenerResumenMaquinasCalidadFaret);
 router.get('/registros/:id/adjuntos', autorizar('leer', 'AUTH_CONSULTAS_MODO'), firmarRespuesta, listarAdjuntosRegistroCalidadFaret);
 router.delete('/registros/:id', autorizar('borrar', 'AUTH_BORRADO_MODO'), eliminarRegistroCalidadFaret);
+// Edición (ADMIN, ADMIN_TI, INSPECTOR): siempre exige sesión y rol, sin modo observar/off.
+router.put('/registros/:id', autorizar('editar', 'AUTH_EDICION_MODO', { obligatorio: true }), actualizarRegistroCalidadFaret);
+router.get('/registros/:id/auditoria', autorizar('leer', 'AUTH_CONSULTAS_MODO'), firmarRespuesta, auditoriaCalidadFaret);
 
 router.use(manejarErroresUpload);
 
