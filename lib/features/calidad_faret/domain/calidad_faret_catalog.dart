@@ -18,6 +18,7 @@ class CalidadFaretCatalog {
       'EMERSON RODRIGUEZ',
       'JORGE GONZALEZ',
       'LUIS SEPULVEDA',
+      'ORANGEL MARTINEZ',
       'ORLANDO MEDINA',
       'Otros',
     ],
@@ -42,6 +43,7 @@ class CalidadFaretCatalog {
       'CARLOS RIVERA',
       'GUILLERMO DIAZ',
       'KERVIN MOSQUERA',
+      'LUIS ARAVENA',
       'LUIS MONTOYA',
       'RODRIGO ALVAREZ',
       'SERGIO TORO',
@@ -53,15 +55,11 @@ class CalidadFaretCatalog {
       'CRISTIAN MUÑOZ',
       'FERNANDO ALFARO',
       'FRANCISCO DIAZ',
-      'FRANCISCO NORAMBUENA',
       'JORGE HUENUQUEO',
-      'LUIS COLOMBO',
-      'LUIS VERA',
+      'MARCOS ASTORGA',
       'MARCOS MORALES',
-      'NIKOLAI GENTILE',
-      'RAMON MARIQUEO',
       'RODRIGO AMAYA',
-      'RODRIGO LIZANA',
+      'SEBASTIAN BUCAREI',
       'Otros',
     ],
     '12-FOLLETOS': [
@@ -81,7 +79,7 @@ class CalidadFaretCatalog {
   };
 
   static const Map<String, List<String>> maquinasPorArea = {
-    '02-LAMINADO': ['AQUA 120 STEINEMANN', 'SIRYUS'],
+    '02-LAMINADO': ['AQUA 120 STEINEMANN', 'SIRYUS', 'WEN CHYUAN'],
     '03-OFFSET': [
       'CD 102 4-L',
       'KBA 145 / 164',
