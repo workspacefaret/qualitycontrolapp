@@ -346,3 +346,44 @@ test('FARET intacto: ningún archivo de FARET referencia la clasificación de pa
         assert.ok(!/clasificacionPallets|pallet_clasificaciones|fotosPallet/.test(t), `${f} no debe tocar la clasificación de pallets INNPACK`);
     }
 });
+
+// ---- Seguridad de la ruta real ------------------------------------------------------------------------------------------
+test('rutas: /tarja se limita por IP (429), no consulta FPS tras el límite; lectura y anulación exigen sesión en modo exigir', async () => {
+    const http = require('http');
+    const express = require('express');
+    const { _reiniciar } = require('../src/middleware/limiteSolicitudes');
+    const router = require('../src/routes/clasificacionPallets.routes');
+    const anteriores = { l: process.env.LIMITE_TARJA_POR_MIN, c: process.env.AUTH_CONSULTAS_MODO, b: process.env.AUTH_BORRADO_MODO };
+    process.env.LIMITE_TARJA_POR_MIN = '3'; process.env.AUTH_CONSULTAS_MODO = 'exigir'; process.env.AUTH_BORRADO_MODO = 'exigir';
+    _reiniciar(); reset();
+    state.tarjas['466568-1'] = FILA('466568-1');
+
+    const app = express();
+    app.set('trust proxy', false);
+    app.use((q, s, n) => { Object.defineProperty(q, 'ip', { value: '10.9.9.9' }); n(); });
+    app.use(express.json());
+    app.use('/api/pallets', router);
+    const srv = http.createServer(app);
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${srv.address().port}/api/pallets`;
+    const restore = quiet();
+    try {
+        const estados = [];
+        for (let i = 0; i < 5; i++) estados.push((await fetch(`${url}/tarja/466568-1`)).status);
+        assert.deepStrictEqual(estados, [200, 200, 200, 429, 429]);
+
+        // Sin token: lectura 401 y anulación 401; nunca llegan al controlador.
+        for (const ruta of ['/clasificaciones', '/clasificaciones/resumen', '/clasificaciones/defectos', '/clasificaciones/1', '/historial/466568-1']) {
+            assert.strictEqual((await fetch(`${url}${ruta}`)).status, 401, ruta);
+        }
+        const anular = await fetch(`${url}/clasificaciones/1/anular`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo: 'x' }) });
+        assert.strictEqual(anular.status, 401);
+        assert.strictEqual(calls.filter((c) => c.text && /UPDATE pallet_clasificaciones/.test(c.text)).length, 0);
+    } finally {
+        restore(); srv.close();
+        for (const [k, v] of [['LIMITE_TARJA_POR_MIN', anteriores.l], ['AUTH_CONSULTAS_MODO', anteriores.c], ['AUTH_BORRADO_MODO', anteriores.b]]) {
+            if (v === undefined) delete process.env[k]; else process.env[k] = v;
+        }
+        _reiniciar();
+    }
+});

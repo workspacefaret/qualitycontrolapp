@@ -2,6 +2,7 @@ const express = require('express');
 
 const { autorizar } = require('../middleware/auth');
 const { firmarRespuesta } = require('../middleware/firmarRespuesta');
+const { limitarConsultasTarja } = require('../middleware/limiteSolicitudes');
 const {
     obtenerTarja, listarClasificaciones, resumenClasificaciones, defectosPorClasificacion,
     obtenerClasificacion, obtenerHistorial, anularClasificacion,
@@ -9,8 +10,9 @@ const {
 
 const router = express.Router();
 
-// Formularios (sin login, igual que /api/orden-fabricacion y /api/bobina): solo lectura de FPS.
-router.get('/tarja/:codigo', obtenerTarja);
+// Formularios (sin login, igual que /api/orden-fabricacion y /api/bobina: los operadores de la app no tienen sesión): solo lectura de FPS,
+// con límite por IP porque cada llamada consulta FPS.
+router.get('/tarja/:codigo', limitarConsultasTarja, obtenerTarja);
 
 // Lectura para Photino (mismo esquema de autenticación que el resto de las consultas) y anulación (permiso de borrado).
 const leer = [autorizar('leer', 'AUTH_CONSULTAS_MODO'), firmarRespuesta];
