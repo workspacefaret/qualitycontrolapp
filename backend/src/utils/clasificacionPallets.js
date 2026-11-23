@@ -113,7 +113,7 @@ const consultarEtiquetasDelRegistro = async (recordKey) => {
 // ---- Guardado dentro de la transacción de la inspección ---------------------------------------------------------------
 const SQL_DEFECTOS_VALIDOS = (n) => `
 SELECT id FROM parametros_control_visual
-WHERE proceso_id = @procesoId AND activo = 1 AND id IN (${Array.from({ length: n }, (_, i) => `@d${i}`).join(', ')})`;
+WHERE proceso_id = @procesoId AND activo = 1 AND empresa IS NULL AND id IN (${Array.from({ length: n }, (_, i) => `@d${i}`).join(', ')})`;
 
 // Prepara (sin tocar la transacción) las clasificaciones válidas y las descartadas con su motivo.
 // Nunca lanza: ante cualquier problema el pallet se descarta y se informa, la inspección se guarda igual.
