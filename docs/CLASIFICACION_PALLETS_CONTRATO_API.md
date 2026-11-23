@@ -17,7 +17,7 @@ Alcance: solo INNPACK (Calidad y Producción, flujo QR de máquina). FARET no pa
 
 Lectura: mismo JWT que el resto (`Authorization: Bearer`), roles ADMIN/ADMIN_TI/CALIDAD/INSPECTOR/CONSULTA/OPERADOR (modo `AUTH_CONSULTAS_MODO`).
 Anulación: ADMIN/ADMIN_TI/CALIDAD (modo `AUTH_BORRADO_MODO`). `fotoUrl` llega **ya firmada** (vence en ~10 min); volver a consultar para renovarla.
-`GET /tarja/:codigo` es público (lo usan los formularios, igual que `/orden-fabricacion` y `/bobina`).
+`GET /tarja/:codigo` es público a propósito (lo usan los formularios, cuyos operadores no tienen sesión; igual que `/orden-fabricacion` y `/bobina`), pero está limitado por IP: `LIMITE_TARJA_POR_MIN` (def. 120/min; 0 = sin límite) → 429 `Demasiadas solicitudes`. Solo expone los campos listados abajo, nunca ids internos de FPS. Photino no debe usarlo: para datos de tarja ya clasificada use `fps` de los endpoints de lectura.
 
 ## Endpoints
 
@@ -73,6 +73,47 @@ Reclasificar desde Photino no existe a propósito: la clasificación nace en la 
 ### GET `/tarja/:codigo` (público; lo usa la app)
 Acepta `N-N` o solo `N` (registro). `data` = datos de FPS + `estadoActual{color,clasificadoEn}`; o `{requiereEtiqueta:true, etiquetas[]}`.
 Errores: `CODIGO_INVALIDO` 400, `TARJA_NO_ENCONTRADA` 404, `TARJA_SIN_REGISTRO_PRODUCCION` 404, `FPS_NO_DISPONIBLE` 503.
+
+## Códigos de error comunes
+
+| HTTP | cuándo | cuerpo |
+|---|---|---|
+| 401 | sin token válido (modo `exigir`) | `{ok:false, message}` (lo emite `middleware/auth.js`) |
+| 403 | token válido sin rol permitido (lectura: ADMIN/ADMIN_TI/CALIDAD/INSPECTOR/CONSULTA/OPERADOR; anular: ADMIN/ADMIN_TI/CALIDAD) | idem |
+| 400 | `CODIGO_INVALIDO`, `ID_INVALIDO`, `MOTIVO_REQUERIDO` | `{ok:false, code, message}` |
+| 404 | `NO_ENCONTRADA`, `NO_ENCONTRADA_O_YA_ANULADA`, `TARJA_NO_ENCONTRADA`, `TARJA_SIN_REGISTRO_PRODUCCION` | idem |
+| 429 | demasiadas consultas de tarja desde la misma IP | `{ok:false, message}` + cabecera `Retry-After` |
+| 500 | error SQL (p. ej. migración 015 no aplicada) | `{ok:false, message:'No se pudo completar la consulta.'}` (sin detalle interno) |
+| 503 | `FPS_NO_DISPONIBLE`, o la API de autenticación emisora no responde (falla cerrado) | idem |
+
+En modo `observar` (hoy) los endpoints de lectura/anulación responden aunque no haya token; Photino debe enviarlo igual (`Authorization: Bearer <JWT de la sesión>`).
+
+## Ejemplos de respuesta
+
+`GET /tarja/466568-1` (forma exacta; valores ilustrativos):
+```json
+{ "ok": true, "data": { "codigo": "466568-1", "recordKey": 466568, "nEtiqueta": 1, "totalEtiquetas": 25, "cantidad": 1200,
+  "fechaTarja": "2026-11-22T21:08:49", "ordenFabricacion": "22669", "npFaret": "22669", "npInnpack": "3957",
+  "cliente": "INNPACK SpA-A.G. SERVICIOS SPA", "itemNp": "1", "codigoProducto": "PT-0001", "producto": "PLIEGO TROQUELADO",
+  "proceso": "TROQUEL", "maquina": "BOBST 142 - 2 (SFM)", "operador": "LUIS MONTOYA", "registroActivo": true,
+  "estadoActual": { "id": 12, "color": "AZUL", "clasificadoEn": "2026-11-23T10:30:00" } } }
+```
+`estadoActual` es `null` si el pallet nunca se clasificó (o no hay clasificación vigente).
+
+`GET /tarja/466568` con varias etiquetas: `{ "ok": true, "data": { "requiereEtiqueta": true, "recordKey": 466568, "etiquetas": [ { "codigo": "466568-1", "nEtiqueta": 1, "cantidad": 1200 } ] } }`
+
+`GET /clasificaciones/resumen?desde=2026-11-01&vista=vigentes`:
+```json
+{ "ok": true, "data": { "vista": "vigentes", "totales": { "azul": 3, "rojo": 1, "verde": 20, "total": 24 },
+  "porProceso": [ { "id": 3, "nombre": "Troquelado", "azul": 3, "rojo": 1, "verde": 12, "total": 16 } ],
+  "porMaquina": [ { "id": 6, "nombre": "BOBST 142-2", "azul": 3, "rojo": 1, "verde": 12, "total": 16 } ],
+  "porDia": [ { "dia": "2026-11-23", "azul": 1, "rojo": 0, "verde": 4, "total": 5 } ] } }
+```
+`GET /clasificaciones/defectos`: `{ "ok": true, "data": { "porDefecto": [ { "color": "ROJO", "defectoId": 3, "nombre": "Aplastado", "criticidad": "critico", "cantidad": 2 } ], "sinDefecto": [ { "color": "VERDE", "cantidad": 20 } ] } }`
+
+Anulación fallida: `404 { "ok": false, "code": "NO_ENCONTRADA_O_YA_ANULADA", "message": "Clasificación no encontrada o ya anulada." }`
+
+Nota sobre el historial: el detalle y `/historial/:codigo` devuelven todas las clasificaciones del pallet (más antigua primero); la fila con `vigente:true` es el estado actual; las anuladas conservan `anulado:true`, motivo y autor. Una reclasificación no modifica filas anteriores.
 
 ## Guardado (referencia; lo hace la app, no Photino)
 
