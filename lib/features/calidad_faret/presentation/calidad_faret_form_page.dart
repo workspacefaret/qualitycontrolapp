@@ -6,11 +6,13 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/api/calidad_faret_api.dart';
 import '../../../core/api/calidad_faret_eventos_api.dart';
+import '../../../core/api/calidad_faret_planta_api.dart';
 import '../../../core/network/network_mode_service.dart';
 import '../../../core/utils/client_id.dart';
 import '../../../core/widgets/evidencia_miniatura.dart';
 import '../domain/calidad_faret_catalog.dart';
 import '../domain/catalogo_eventos_faret.dart';
+import '../domain/catalogo_planta_faret.dart';
 
 class CalidadFaretFormPage extends StatefulWidget {
   final String operador;
@@ -24,6 +26,7 @@ class CalidadFaretFormPage extends StatefulWidget {
 class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   final CalidadFaretApi _calidadFaretApi = CalidadFaretApi();
   final CalidadFaretEventosApi _eventosApi = CalidadFaretEventosApi();
+  final CalidadFaretPlantaApi _plantaApi = CalidadFaretPlantaApi();
   final NetworkModeService _networkModeService = NetworkModeService();
   final ImagePicker _imagePicker = ImagePicker();
   final String _clientId = generarClientId();
@@ -51,6 +54,8 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   // idEvento de los eventos del catálogo oficial seleccionados.
   final Set<String> _selectedDefectos = {};
   CatalogoEventosFaret? _catalogoEventos;
+  // Áreas, máquinas y operadores: arranca con el catálogo compilado y se actualiza desde el servidor.
+  CatalogoPlantaFaret _planta = CatalogoPlantaFaret.respaldo;
   bool _cargandoCatalogo = true;
   String? _selectedTipoFolia;
 
@@ -63,6 +68,13 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   void initState() {
     super.initState();
     _cargarCatalogoEventos();
+    _cargarCatalogoPlanta();
+  }
+
+  Future<void> _cargarCatalogoPlanta() async {
+    final planta = await _plantaApi.obtenerCatalogo();
+    if (!mounted) return;
+    setState(() => _planta = planta);
   }
 
   Future<void> _cargarCatalogoEventos() async {
@@ -404,13 +416,11 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
   Widget build(BuildContext context) {
     final operadores = _selectedAreaControl == null
         ? const <String>[]
-        : CalidadFaretCatalog.operadoresPorArea[_selectedAreaControl] ??
-            const <String>[];
+        : _planta.operadoresDe(_selectedAreaControl);
 
     final maquinas = _selectedAreaControl == null
         ? const <String>[]
-        : CalidadFaretCatalog.maquinasPorArea[_selectedAreaControl] ??
-            const <String>[];
+        : _planta.maquinasDe(_selectedAreaControl);
 
     final defectosDisponibles =
         _catalogoEventos?.eventosDe(_selectedAreaDefecto) ??
@@ -578,7 +588,7 @@ class _CalidadFaretFormPageState extends State<CalidadFaretFormPage> {
                             _dropdown(
                               label: 'Área de control',
                               value: _selectedAreaControl,
-                              items: CalidadFaretCatalog.areasControl,
+                              items: _planta.areas,
                               onChanged: (value) {
                                 setState(() {
                                   _selectedAreaControl = value;

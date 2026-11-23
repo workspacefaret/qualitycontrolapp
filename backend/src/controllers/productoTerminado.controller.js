@@ -70,6 +70,23 @@ const crearRegistroProductoTerminado = async (req, res) => {
             });
         }
 
+        // Aislamiento por empresa en el servidor: un defecto propio de FARET (empresa = 'FARET') no se acepta en una inspección INNPACK.
+        // No se exige que siga activo (pudo darse de baja mientras el inspector llenaba el formulario).
+        const idsDefecto = [...new Set(hallazgosArray.flatMap((h) => (Array.isArray(h.defectoIds) ? h.defectoIds : [])))];
+        if (idsDefecto.some((d) => !Number.isInteger(d) || d <= 0)) {
+            borrarArchivos(req);
+            return res.status(400).json({ ok: false, message: 'Defecto inválido en los hallazgos' });
+        }
+        if (idsDefecto.length) {
+            const visibles = await poolConn.request()
+                .input('empresa', sql.NVarChar(7), empresa)
+                .query(`SELECT id FROM parametros_control_visual WHERE id IN (${idsDefecto.join(',')}) AND (empresa IS NULL OR empresa = @empresa)`);
+            if (visibles.recordset.length !== idsDefecto.length) {
+                borrarArchivos(req);
+                return res.status(400).json({ ok: false, message: 'Hay defectos que no corresponden a la empresa de la inspección' });
+            }
+        }
+
         await transaction.begin();
 
         const unidadesNc = hallazgosArray.length;

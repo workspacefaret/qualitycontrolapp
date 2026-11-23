@@ -117,6 +117,36 @@ class _ProductoTerminadoFormPageState
     super.dispose();
   }
 
+  /// Los defectos propios de FARET dependen de la empresa: al cambiarla se
+  /// recarga el catálogo y se descartan los defectos marcados que ya no aplican.
+  Future<void> _onEmpresaChanged(String empresa) async {
+    if (_empresa == empresa) return;
+    setState(() => _empresa = empresa);
+    if (_procesoPt == null) return;
+
+    try {
+      final parametros = await _catalogosApi.obtenerParametrosVisuales(
+        _procesoPt == 'Termoformado' ? 5 : 4,
+        empresa: empresa,
+      );
+      if (!mounted || _empresa != empresa) return;
+      final ids = parametros.map((p) => p['id']).toSet();
+      setState(() {
+        _parametrosVisuales = parametros;
+        for (final h in _hallazgos) {
+          h.defectoIds.removeWhere((id) => !ids.contains(id));
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo actualizar el catálogo de defectos'),
+        ),
+      );
+    }
+  }
+
   Future<void> _onProcesoPtChanged(String? value) async {
     setState(() {
       _procesoPt = value;
@@ -138,8 +168,10 @@ class _ProductoTerminadoFormPageState
     final procesoId = value == 'Termoformado' ? 5 : 4;
 
     try {
-      final parametros =
-          await _catalogosApi.obtenerParametrosVisuales(procesoId);
+      final parametros = await _catalogosApi.obtenerParametrosVisuales(
+        procesoId,
+        empresa: _empresa,
+      );
       final origenes = await _catalogosApi.obtenerOrigenesProblema(procesoId);
 
       if (!mounted) return;
@@ -676,8 +708,7 @@ class _ProductoTerminadoFormPageState
                                     empresa == 'FARET' ? 'Faret' : 'Innpack',
                                   ),
                                   selected: selected,
-                                  onSelected: (_) =>
-                                      setState(() => _empresa = empresa),
+                                  onSelected: (_) => _onEmpresaChanged(empresa),
                                   selectedColor: const Color(0xFF8BC34A),
                                   backgroundColor: const Color(0xFFEEF3F5),
                                   labelStyle: TextStyle(

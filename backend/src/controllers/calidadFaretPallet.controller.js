@@ -4,6 +4,28 @@ const { auditoriaDisponible, resumenEdicionSql } = require('../utils/edicionInsp
 const TIPOS_MATERIAL_VALIDOS = ['NV', 'PAPEL'];
 const RESULTADOS_VALIDOS = ['CUMPLE', 'NO_CUMPLE'];
 
+// El checklist se administra desde Administración de planta (preguntas nuevas, bajas, orden) mientras hay inspecciones en curso.
+// La app envía `preguntasMostradas` (las preguntas que el inspector vio y respondió). Regla (sin omitir controles):
+//  - toda pregunta vigente que la app mostró debe venir respondida (la app no puede saltarse un control que vio);
+//  - una pregunta vigente que la app NO mostró solo se tolera si es muy reciente (creada después de abrirse el formulario,
+//    tolerancia TOLERANCIA minutos); una vigente antigua que no se mostró se rechaza;
+//  - una pregunta dada de baja mientras se llenaba se acepta (no se pierde su respuesta); una inexistente se rechaza;
+//  - sin `preguntasMostradas` (app anterior) se exige el conjunto exacto de preguntas vigentes, como siempre.
+const TOLERANCIA_PREGUNTA_NUEVA_MIN = parseInt(process.env.PALLET_PREGUNTA_NUEVA_TOLERANCIA_MIN, 10) || 240;
+
+// preguntas: [{ id, activo, minutos }] (minutos desde su creación); respondidas/mostradas: Set de ids (mostradas null = app anterior).
+const validarChecklist = (preguntas, respondidas, mostradas = null, tolerancia = TOLERANCIA_PREGUNTA_NUEVA_MIN) => {
+    const conocidas = new Set(preguntas.map((p) => p.id));
+    if ([...respondidas].some((id) => !conocidas.has(id))) return 'El checklist incluye preguntas que no existen';
+    if (mostradas && [...mostradas].some((id) => !conocidas.has(id))) return 'El checklist incluye preguntas que no existen';
+    const faltan = preguntas.some((p) => {
+        if (!p.activo || respondidas.has(p.id)) return false;
+        if (!mostradas) return true;
+        return mostradas.has(p.id) || p.minutos >= tolerancia;
+    });
+    return faltan ? 'El checklist debe responder todas las preguntas vigentes' : null;
+};
+
 const crearRegistroCalidadFaretPallet = async (req, res) => {
     const poolConn = await getCalidadSqlServerPool();
     const transaction = new sql.Transaction(poolConn);
@@ -23,6 +45,7 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
             operadorOtro,
             maquina,
             respuestas,
+            preguntasMostradas,
         } = body;
 
         if (!tipoMaterial || !TIPOS_MATERIAL_VALIDOS.includes(tipoMaterial)) {
@@ -101,17 +124,16 @@ const crearRegistroCalidadFaretPallet = async (req, res) => {
             }
         }
 
-        const preguntasActivasResult = await poolConn.request().query(
-            'SELECT id FROM calidad_faret_pallet_preguntas WHERE activo = 1'
+        const preguntasResult = await poolConn.request().query(
+            'SELECT id, activo, DATEDIFF(MINUTE, created_at, GETDATE()) AS minutos FROM calidad_faret_pallet_preguntas'
         );
-        const preguntasActivas = preguntasActivasResult.recordset;
+        const mostradas = Array.isArray(preguntasMostradas) ? new Set(preguntasMostradas.map(Number)) : null;
+        const errorChecklist = validarChecklist(preguntasResult.recordset, idsUnicos, mostradas);
 
-        const idsActivos = new Set(preguntasActivas.map((p) => p.id));
-
-        if (idsUnicos.size !== idsActivos.size || [...idsActivos].some((id) => !idsUnicos.has(id))) {
+        if (errorChecklist) {
             return res.status(400).json({
                 ok: false,
-                message: 'El checklist debe responder exactamente todas las preguntas activas',
+                message: errorChecklist,
             });
         }
 
@@ -457,4 +479,5 @@ module.exports = {
     listarRegistrosCalidadFaretPallet,
     obtenerRegistroCalidadFaretPallet,
     eliminarRegistroCalidadFaretPallet,
+    validarChecklist,
 };

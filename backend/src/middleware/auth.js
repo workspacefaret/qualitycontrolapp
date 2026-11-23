@@ -22,6 +22,9 @@ const PERMISOS = {
     borrar: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD']),
     // Editar inspecciones: ADMIN, ADMIN_TI e INSPECTOR (CALIDAD solo consulta). Siempre se exige (ver `obligatorio` en autorizar).
     editar: new Set(['ADMIN', 'ADMIN_TI', 'INSPECTOR']),
+    // Administrar planta (operadores/máquinas/áreas): todo rol de sesión de escritorio salvo CONSULTA. La restricción real por usuario
+    // (solo quienes autorice ADMIN_TI) la aplica el QCC con su matriz de permisos; aquí se exige sesión válida y queda auditado.
+    administrar: new Set(['ADMIN', 'ADMIN_TI', 'CALIDAD', 'INSPECTOR', 'OPERADOR']),
 };
 
 const modo = (nombre) => {

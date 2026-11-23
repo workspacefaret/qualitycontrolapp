@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/api/calidad_faret_pallet_api.dart';
-import '../domain/calidad_faret_catalog.dart';
+import '../../../core/api/calidad_faret_planta_api.dart';
+import '../domain/catalogo_planta_faret.dart';
 
 class CalidadFaretPalletFormPage extends StatefulWidget {
   final String? operador;
@@ -16,6 +17,8 @@ class CalidadFaretPalletFormPage extends StatefulWidget {
 class _CalidadFaretPalletFormPageState
     extends State<CalidadFaretPalletFormPage> {
   final CalidadFaretPalletApi _api = CalidadFaretPalletApi();
+  final CalidadFaretPlantaApi _plantaApi = CalidadFaretPlantaApi();
+  CatalogoPlantaFaret _planta = CatalogoPlantaFaret.respaldo;
 
   final TextEditingController _dimensionController = TextEditingController();
   final TextEditingController _fibraController = TextEditingController();
@@ -41,6 +44,13 @@ class _CalidadFaretPalletFormPageState
   void initState() {
     super.initState();
     _cargarPreguntas();
+    _cargarCatalogoPlanta();
+  }
+
+  Future<void> _cargarCatalogoPlanta() async {
+    final planta = await _plantaApi.obtenerCatalogo();
+    if (!mounted) return;
+    setState(() => _planta = planta);
   }
 
   @override
@@ -173,6 +183,8 @@ class _CalidadFaretPalletFormPageState
       'areaControl': _selectedAreaControl,
       'operador': widget.operador,
       'maquina': _selectedMaquina,
+      // Preguntas que el inspector vio: el servidor exige que todas vengan respondidas.
+      'preguntasMostradas': _preguntas.map((p) => p['id'] as int).toList(),
       'respuestas': _preguntas.map((pregunta) {
         final id = pregunta['id'] as int;
 
@@ -438,8 +450,7 @@ class _CalidadFaretPalletFormPageState
   Widget build(BuildContext context) {
     final maquinas = _selectedAreaControl == null
         ? const <String>[]
-        : CalidadFaretCatalog.maquinasPorArea[_selectedAreaControl] ??
-            const <String>[];
+        : _planta.maquinasDe(_selectedAreaControl);
 
     return Scaffold(
       backgroundColor: const Color(0xFF17212B),
@@ -628,7 +639,7 @@ class _CalidadFaretPalletFormPageState
                                       _dropdown(
                                         label: 'Área de control',
                                         value: _selectedAreaControl,
-                                        items: CalidadFaretCatalog.areasControl,
+                                        items: _planta.areas,
                                         onChanged: (value) {
                                           setState(() {
                                             _selectedAreaControl = value;

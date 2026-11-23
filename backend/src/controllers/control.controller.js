@@ -91,6 +91,7 @@ const getContextoPorQr = async (req, res) => {
           FROM parametros_control_visual
           WHERE activo = 1
             AND proceso_id = @processId
+            AND empresa IS NULL
           ORDER BY
             CASE criticidad WHEN 'critico' THEN 1 WHEN 'mayor' THEN 2 WHEN 'menor' THEN 3 ELSE 4 END,
             nombre ASC

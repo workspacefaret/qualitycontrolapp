@@ -14,15 +14,18 @@ class FakeRequest {
         const t = text.replace(/\s+/g, ' ');
         if (/INSERT INTO registros_producto_terminado/.test(t)) { calls.registros++; return { recordset: [{ id: 77 }] }; }
         if (/INSERT INTO registro_pt_hallazgos/.test(t)) { calls.hallazgos.push({ ...this.p }); return { recordset: [{ id: 5 }] }; }
+        const vis = /FROM parametros_control_visual WHERE id IN \(([\d,]+)\)/.exec(t);
+        if (vis) return { recordset: vis[1].split(',').map(Number).filter((id) => !(defectosFaret.has(id) && this.p.empresa !== 'FARET')).map((id) => ({ id })) };
         return { recordset: [] };
     }
 }
+const defectosFaret = new Set([900]); // parametros_control_visual.empresa = 'FARET'
 const sqlStub = new Proxy({}, {
     get: (_, k) => (k === 'Transaction' ? class { async begin() { } async commit() { } async rollback() { } } : k === 'Request' ? FakeRequest : () => 'T'),
 });
 const cargar = Module._load;
 Module._load = function (request, ...rest) {
-    if (request.endsWith('calidadSqlServerPool')) return { sql: sqlStub, getCalidadSqlServerPool: async () => ({}) };
+    if (request.endsWith('calidadSqlServerPool')) return { sql: sqlStub, getCalidadSqlServerPool: async () => ({ request: () => new FakeRequest() }) };
     return cargar.call(this, request, ...rest);
 };
 
@@ -89,4 +92,18 @@ test('payload incompleto: 400 sin archivos huérfanos', async () => {
     assert.strictEqual(r.status, 400);
     await reposo();
     assert.strictEqual(nuevos().length, antesN);
+});
+
+test('aislamiento por empresa: un defecto propio de FARET se rechaza en una inspección INNPACK y se acepta en FARET', async () => {
+    const con = (empresa, defectoIds) => ({ ...PAYLOAD, empresa, hallazgos: [{ origenId: 1, observacion: 'x', defectoIds }] });
+    const r1 = await enviar([['a.jpg', JPEG]], con('INNPACK', [900]));
+    assert.strictEqual(r1.status, 400);
+    assert.match((await r1.json()).message, /no corresponden a la empresa/);
+    const r2 = await enviar([['a.jpg', JPEG]], con('FARET', [900, 10]));
+    assert.strictEqual(r2.status, 201);
+    const r3 = await enviar([['a.jpg', JPEG]], con('INNPACK', [10, 11]));
+    assert.strictEqual(r3.status, 201);
+    const r4 = await enviar([['a.jpg', JPEG]], con('INNPACK', ['x']));
+    assert.strictEqual(r4.status, 400);
+    await reposo();
 });

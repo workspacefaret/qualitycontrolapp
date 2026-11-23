@@ -88,6 +88,11 @@ const getMaquinas = async (req, res) => {
 const getParametrosVisuales = async (req, res) => {
     try {
         const { procesoId } = req.params;
+        // Los defectos propios de FARET (parametros_control_visual.empresa = 'FARET', migración 015) solo se entregan si la app lo pide
+        // explícitamente; sin parámetro (INNPACK y apps anteriores) solo salen los compartidos. Cualquier otro valor se trata como ausente.
+        const filtroEmpresa = String(req.query.empresa || '').toUpperCase() === 'FARET'
+            ? `AND (empresa IS NULL OR empresa = N'FARET')`
+            : 'AND empresa IS NULL';
 
         const pool = await getCalidadSqlServerPool();
         const result = await pool.request()
@@ -102,6 +107,7 @@ const getParametrosVisuales = async (req, res) => {
         FROM parametros_control_visual
         WHERE activo = 1
           AND proceso_id = @procesoId
+          ${filtroEmpresa}
         ORDER BY
           CASE criticidad WHEN 'critico' THEN 1 WHEN 'mayor' THEN 2 WHEN 'menor' THEN 3 ELSE 4 END,
           nombre ASC
@@ -197,6 +203,7 @@ const getCatalogoOffline = async (req, res) => {
         criticidad
       FROM parametros_control_visual
       WHERE activo = 1
+        AND empresa IS NULL
       ORDER BY
         proceso_id ASC,
         CASE criticidad WHEN 'critico' THEN 1 WHEN 'mayor' THEN 2 WHEN 'menor' THEN 3 ELSE 4 END,

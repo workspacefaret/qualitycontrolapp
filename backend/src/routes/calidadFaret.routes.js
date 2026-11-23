@@ -4,7 +4,8 @@ const path = require('path');
 const { crearUpload, validarContenido, manejarErroresUpload, limitarPeticion, MAX_BYTES } = require('../utils/uploads');
 const { autorizar } = require('../middleware/auth');
 const { firmarRespuesta } = require('../middleware/firmarRespuesta');
-const { actualizarRegistroCalidadFaret, auditoriaCalidadFaret } = require('../controllers/inspeccionesEdicion.controller');
+const { catalogoPlantaFaret } = require('../controllers/adminPlanta.controller');
+const { actualizarRegistroCalidadFaret,auditoriaCalidadFaret } = require('../controllers/inspeccionesEdicion.controller');
 
 const router = express.Router();
 
@@ -22,6 +23,8 @@ const upload = crearUpload(path.join(__dirname, '../../uploads/calidad_faret'));
 
 // Catálogo de eventos (público como los demás catálogos de formularios; solo lectura, sin datos sensibles).
 router.get('/catalogo-eventos', obtenerCatalogoEventosCalidadFaret);
+// Catálogo de planta (áreas, máquinas y operadores activos) administrado desde el QCC; también público y de solo lectura.
+router.get('/catalogo-planta', catalogoPlantaFaret);
 
 // Máx. 5 archivos de 25 MB por inspección (+ margen para los campos del formulario).
 router.post('/registros', limitarPeticion(5 * MAX_BYTES + 1024 * 1024), upload.array('archivos', 5), validarContenido, crearRegistroCalidadFaret);

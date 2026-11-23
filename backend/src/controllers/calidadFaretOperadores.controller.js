@@ -6,6 +6,7 @@ const listarOperadoresCalidadFaret = async (req, res) => {
         const result = await pool.request().query(`
             SELECT nombre
             FROM calidad_faret_operadores
+            WHERE activo = 1
             ORDER BY nombre ASC
         `);
 

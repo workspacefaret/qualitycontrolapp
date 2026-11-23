@@ -14,6 +14,7 @@ const ordenFabricacionRoutes = require('./src/routes/ordenFabricacion.routes');
 const bobinaRoutes = require('./src/routes/bobina.routes');
 const productoTerminadoRoutes = require('./src/routes/productoTerminado.routes');
 const adjuntosRoutes = require('./src/routes/adjuntos.routes');
+const adminPlantaRoutes = require('./src/routes/adminPlanta.routes');
 const { uploadsAcceso } = require('./src/middleware/uploadsAcceso');
 const { limitarSolicitudes } = require('./src/middleware/limiteSolicitudes');
 
@@ -74,6 +75,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.use('/api/adjuntos', adjuntosRoutes);
+app.use('/api/admin-planta', adminPlantaRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/control', controlRoutes);
 app.use('/api/calidad-faret/operadores', calidadFaretOperadoresRoutes);
