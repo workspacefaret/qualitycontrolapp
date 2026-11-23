@@ -11,6 +11,8 @@ import '../../../core/network/network_mode_service.dart';
 import '../../../core/utils/client_id.dart';
 import '../../../core/utils/turno_calculator.dart';
 import '../../../core/widgets/evidencia_miniatura.dart';
+import '../../clasificacion_pallets/domain/pallet_clasificacion.dart';
+import '../../clasificacion_pallets/presentation/clasificacion_pallets_section.dart';
 import '../domain/bobina_qr_parser.dart';
 import '../domain/control_context.dart';
 import 'bobina_qr_scanner_page.dart';
@@ -73,6 +75,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
   List<Map<String, dynamic>> _ordenItems = [];
   String? _selectedOrdenItem;
   final List<Map<String, dynamic>> _bobinasEscaneadas = [];
+  final ClasificacionPalletsController _pallets = ClasificacionPalletsController();
   bool _resolviendoBobina = false;
 
   final List<String> _visualControlResults = [
@@ -108,6 +111,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
   @override
   void dispose() {
+    _pallets.dispose();
     _npController.dispose();
     _observationController.dispose();
     _wasteQuantityController.dispose();
@@ -422,6 +426,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'operadorMaquinaId': _operadorMaquinaIdValue,
         'clientId': _clientId,
         'bobinas': _bobinasEscaneadas,
+        if (!_pallets.estaVacio) 'pallets': _pallets.aPayload(),
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
         'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
@@ -451,7 +456,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-      if (shouldUseOffline && _selectedAttachmentBytes != null) {
+      if (shouldUseOffline &&
+          (_selectedAttachmentBytes != null || _pallets.tieneFotos)) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -470,6 +476,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
           payload,
           archivoBytes: _selectedAttachmentBytes,
           archivoNombre: _selectedAttachmentName,
+          fotosPallet: _pallets.fotos,
         );
 
         if (!mounted) return;
@@ -480,7 +487,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
         Navigator.pop(context);
       } catch (_) {
-        if (_selectedAttachmentBytes != null) {
+        if (_selectedAttachmentBytes != null || _pallets.tieneFotos) {
           if (!mounted) return;
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -568,6 +575,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
         'operadorMaquinaId': _operadorMaquinaIdValue,
         'clientId': _clientId,
         'bobinas': _bobinasEscaneadas,
+        if (!_pallets.estaVacio) 'pallets': _pallets.aPayload(),
         'requiereMerma': _hasWaste,
         'tipoMerma': _hasWaste ? _selectedWasteType : null,
         'cantidadMerma': _hasWaste && _wasteQuantityController.text.isNotEmpty
@@ -597,7 +605,8 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
       final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-      if (shouldUseOffline && _selectedAttachmentBytes != null) {
+      if (shouldUseOffline &&
+          (_selectedAttachmentBytes != null || _pallets.tieneFotos)) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -616,6 +625,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
           payload,
           archivoBytes: _selectedAttachmentBytes,
           archivoNombre: _selectedAttachmentName,
+          fotosPallet: _pallets.fotos,
         );
 
         if (!mounted) return;
@@ -628,7 +638,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
 
         Navigator.pop(context);
       } catch (_) {
-        if (_selectedAttachmentBytes != null) {
+        if (_selectedAttachmentBytes != null || _pallets.tieneFotos) {
           if (!mounted) return;
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -684,6 +694,7 @@ class _ControlFormPageState extends State<ControlFormPage> {
           origenId: _selectedOrigenId,
           operadorMaquinaId: _selectedOperadorMaquinaId,
           clientId: _clientId,
+          pallets: _pallets,
         ),
       ),
     );
@@ -1807,6 +1818,13 @@ class _ControlFormPageState extends State<ControlFormPage> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 16),
+                      ClasificacionPalletsSection(
+                        controller: _pallets,
+                        parametrosVisuales:
+                            widget.controlContext.parametrosVisuales,
+                        defectosPreseleccionados: () => _selectedFailures,
+                      ),
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 64,

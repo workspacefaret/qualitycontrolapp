@@ -47,8 +47,11 @@ class ControlApi {
     Map<String, dynamic> payload, {
     Uint8List? archivoBytes,
     String? archivoNombre,
+    List<({Uint8List bytes, String nombre})>? fotosPallet,
   }) async {
-    if (archivoBytes == null) {
+    final hayFotosPallet = fotosPallet != null && fotosPallet.isNotEmpty;
+
+    if (archivoBytes == null && !hayFotosPallet) {
       final response = await _apiClient.post(
         '/control/registros',
         payload,
@@ -67,13 +70,28 @@ class ControlApi {
 
     request.fields['payload'] = jsonEncode(payload);
 
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'archivo',
-        archivoBytes,
-        filename: archivoNombre ?? 'archivo',
-      ),
-    );
+    if (archivoBytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'archivo',
+          archivoBytes,
+          filename: archivoNombre ?? 'archivo',
+        ),
+      );
+    }
+
+    // Fotos opcionales de la clasificación de pallets (el payload las referencia por posición con fotoIndex).
+    if (hayFotosPallet) {
+      for (final foto in fotosPallet) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'fotosPallet',
+            foto.bytes,
+            filename: foto.nombre,
+          ),
+        );
+      }
+    }
 
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
