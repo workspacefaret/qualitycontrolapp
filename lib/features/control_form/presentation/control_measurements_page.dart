@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../clasificacion_pallets/domain/pallet_clasificacion.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/api/control_api.dart';
@@ -28,6 +29,7 @@ class ControlMeasurementsPage extends StatefulWidget {
   final String? origenId;
   final String? operadorMaquinaId;
   final String? clientId;
+  final ClasificacionPalletsController? pallets;
 
   const ControlMeasurementsPage({
     super.key,
@@ -47,6 +49,7 @@ class ControlMeasurementsPage extends StatefulWidget {
     this.origenId,
     this.operadorMaquinaId,
     this.clientId,
+    this.pallets,
   });
 
   @override
@@ -298,11 +301,15 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
           : null,
       'clientId': widget.clientId,
       'bobinas': widget.bobinas,
+      if (widget.pallets != null && !widget.pallets!.estaVacio)
+        'pallets': widget.pallets!.aPayload(),
     };
 
     final shouldUseOffline = await _networkModeService.shouldUseOfflineMode();
 
-    if (shouldUseOffline && _selectedAttachmentBytes != null) {
+    if (shouldUseOffline &&
+        (_selectedAttachmentBytes != null ||
+            (widget.pallets?.tieneFotos ?? false))) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -321,6 +328,7 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
         payload,
         archivoBytes: _selectedAttachmentBytes,
         archivoNombre: _selectedAttachmentName,
+        fotosPallet: widget.pallets?.fotos,
       );
 
       if (!mounted) return;
@@ -333,7 +341,8 @@ class _ControlMeasurementsPageState extends State<ControlMeasurementsPage> {
 
       Navigator.popUntil(context, (route) => route.isFirst);
     } catch (_) {
-      if (_selectedAttachmentBytes != null) {
+      if (_selectedAttachmentBytes != null ||
+          (widget.pallets?.tieneFotos ?? false)) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(

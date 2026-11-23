@@ -13,6 +13,7 @@ const calidadFaretOperadoresRoutes = require('./src/routes/calidadFaretOperadore
 const ordenFabricacionRoutes = require('./src/routes/ordenFabricacion.routes');
 const bobinaRoutes = require('./src/routes/bobina.routes');
 const productoTerminadoRoutes = require('./src/routes/productoTerminado.routes');
+const clasificacionPalletsRoutes = require('./src/routes/clasificacionPallets.routes');
 const adjuntosRoutes = require('./src/routes/adjuntos.routes');
 const adminPlantaRoutes = require('./src/routes/adminPlanta.routes');
 const { uploadsAcceso } = require('./src/middleware/uploadsAcceso');
@@ -84,6 +85,7 @@ app.use('/api/calidad-faret-pallet', calidadFaretPalletRoutes);
 app.use('/api/orden-fabricacion', ordenFabricacionRoutes);
 app.use('/api/bobina', bobinaRoutes);
 app.use('/api/producto-terminado', productoTerminadoRoutes);
+app.use('/api/pallets', clasificacionPalletsRoutes);
 
 app.listen(PORT, () => {
   console.log(`Servidor backend en puerto ${PORT}`);

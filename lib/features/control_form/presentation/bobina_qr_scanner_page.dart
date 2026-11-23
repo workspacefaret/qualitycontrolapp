@@ -6,7 +6,15 @@ import 'bobina_web_qr_reader_stub.dart'
     if (dart.library.js_interop) 'bobina_web_qr_reader_web.dart';
 
 class BobinaQrScannerPage extends StatefulWidget {
-  const BobinaQrScannerPage({Key? key}) : super(key: key);
+  /// Textos configurables: por defecto los de la tarja de bobina; la clasificación de pallets reutiliza el mismo lector.
+  final String titulo;
+  final String instruccion;
+
+  const BobinaQrScannerPage({
+    Key? key,
+    this.titulo = 'Escanear tarja de bobina',
+    this.instruccion = 'Apunta la cámara a la tarja de la bobina',
+  }) : super(key: key);
 
   @override
   State<BobinaQrScannerPage> createState() => _BobinaQrScannerPageState();
@@ -79,7 +87,7 @@ class _BobinaQrScannerPageState extends State<BobinaQrScannerPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
         elevation: 0,
-        title: const Text('Escanear tarja de bobina'),
+        title: Text(widget.titulo),
       ),
       body: Stack(
         children: [
@@ -113,10 +121,10 @@ class _BobinaQrScannerPageState extends State<BobinaQrScannerPage> {
                 color: Colors.black.withOpacity(0.65),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Text(
-                'Apunta la cámara a la tarja de la bobina',
+              child: Text(
+                widget.instruccion,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,

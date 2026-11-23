@@ -1,5 +1,6 @@
 const { getCalidadSqlServerPool, sql } = require('../config/calidadSqlServerPool');
 const { borrarArchivos, normalizarClientId } = require('../utils/uploads');
+const { resolverPallets, insertarClasificaciones, borrarFotosNoUsadas } = require('../utils/clasificacionPallets');
 
 
 const getContextoPorQr = async (req, res) => {
@@ -198,6 +199,7 @@ const crearRegistroControl = async (req, res) => {
             bobinas,
             origenId,
             operadorMaquinaId,
+            pallets,
             clientId,
             humedadBobina,
             humedadLinerIzquierda,
@@ -292,6 +294,14 @@ const crearRegistroControl = async (req, res) => {
             } else {
                 operadorMaquinaIdFinal = operadorMaquinaId;
             }
+        }
+
+        // Clasificación de pallets (opcional): se resuelve antes de abrir la transacción (consulta FPS en lectura).
+        // Nunca bloquea la inspección: lo que no sea válido se descarta y se informa en la respuesta.
+        const fotosPallet = req.fotosPallet || [];
+        let palletsResueltos = null;
+        if (Array.isArray(pallets) && pallets.length > 0) {
+            palletsResueltos = await resolverPallets({ pallets, procesoId, poolCalidad: poolConn, fotos: fotosPallet });
         }
 
         await transaction.begin();
@@ -487,7 +497,14 @@ const crearRegistroControl = async (req, res) => {
             }
         }
 
+        let resultadoPallets = null;
+        if (palletsResueltos) {
+            resultadoPallets = await insertarClasificaciones(transaction, registroId, palletsResueltos);
+        }
+
         await transaction.commit();
+
+        if (palletsResueltos) borrarFotosNoUsadas(fotosPallet, resultadoPallets.guardados, palletsResueltos);
 
         res.status(201).json({
             ok: true,
@@ -495,6 +512,7 @@ const crearRegistroControl = async (req, res) => {
             data: {
                 registroId,
                 estadoId,
+                ...(resultadoPallets ? { pallets: resultadoPallets } : {}),
             },
         });
     } catch (error) {
